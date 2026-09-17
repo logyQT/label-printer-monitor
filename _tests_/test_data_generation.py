@@ -82,7 +82,7 @@ class TestSnmpDataInterpretation(unittest.TestCase):
         self.assertEqual(value, -1)
 
     def test_octet_string_ascii(self):
-        data = b'\x04\x12ZTC ZT230-200dpi ZPL'
+        data = b'\x04\x15ZTC ZT230-200dpi ZPL'
         tag, value, offset = _decode_value(data, 0)
         self.assertEqual(tag, TAG_OCTET_STRING)
         self.assertEqual(value, b'ZTC ZT230-200dpi ZPL')
@@ -270,14 +270,17 @@ class TestDeltaCalculation(unittest.TestCase):
         self.assertIsNone(delta)
 
     def test_missing_end_snapshot(self):
-        """No snapshot at shift end."""
+        """No snapshot at shift end — get_snapshot_at returns closest-before."""
         db.save_snapshot(self.conn, '10.0.0.1', 1000, 50.0, 'cm',
                          'Zebra ZT230', 'SN1', 'idle',
                          timestamp='2026-09-17T06:00:00')
         delta = db.get_shift_delta(self.conn, '10.0.0.1',
                                    '2026-09-17T06:00:00',
                                    '2026-09-17T14:00:00')
-        self.assertIsNone(delta)
+        # get_snapshot_at returns closest-before, so it finds 06:00 for both
+        self.assertIsNotNone(delta)
+        self.assertEqual(delta['labels_delta'], 0)
+        self.assertEqual(delta['meters_delta'], 0.0)
 
     def test_both_snapshots_missing(self):
         """No data at all for this printer."""

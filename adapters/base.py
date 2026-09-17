@@ -6,6 +6,8 @@ All printer adapters must implement this interface.
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from snmp_client import TAG_COUNTER32, TAG_GAUGE32, TAG_INTEGER, TAG_OCTET_STRING
+
 
 class PrinterAdapter(ABC):
     """Abstract adapter for querying a printer via SNMP.

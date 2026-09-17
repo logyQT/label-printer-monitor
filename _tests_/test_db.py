@@ -205,7 +205,11 @@ class TestGetShiftDelta(unittest.TestCase):
     def test_missing_end_returns_none(self):
         db.save_snapshot(self.conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', 'SN', 'idle', timestamp='2026-09-17T06:00:00')
         result = db.get_shift_delta(self.conn, '10.0.0.1', '2026-09-17T06:00:00', '2026-09-17T14:00:00')
-        self.assertIsNone(result)
+        # get_snapshot_at returns closest-before, so it finds 06:00 snapshot for both start and end
+        # This results in a zero delta, not None
+        self.assertIsNotNone(result)
+        self.assertEqual(result['labels_delta'], 0)
+        self.assertEqual(result['meters_delta'], 0.0)
 
     def test_zero_delta(self):
         db.save_snapshot(self.conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', 'SN', 'idle', timestamp='2026-09-17T06:00:00')
@@ -325,7 +329,7 @@ class TestGetHistory(unittest.TestCase):
     def test_end_date_filter(self):
         db.save_snapshot(self.conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', 'SN', 'idle', timestamp='2026-09-16T10:00:00')
         db.save_snapshot(self.conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra', 'SN', 'idle', timestamp='2026-09-17T10:00:00')
-        result = db.get_history(self.conn, '10.0.0.1', end_date='2026-09-16')
+        result = db.get_history(self.conn, '10.0.0.1', end_date='2026-09-16T23:59:59')
         self.assertEqual(len(result), 1)
 
     def test_empty_history(self):

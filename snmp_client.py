@@ -127,20 +127,13 @@ def _encode_integer(value):
     """Encode an integer as BER INTEGER."""
     if value == 0:
         return bytes([TAG_INTEGER, 0x01, 0x00])
-    negative = value < 0
-    if negative:
-        value = -value - 1
-    temp = value
-    bytes_list = []
-    while temp > 0:
-        bytes_list.append(temp & 0xFF)
-        temp >>= 8
-    bytes_list.reverse()
-    if negative:
-        bytes_list[0] |= 0x80
-    elif bytes_list[0] & 0x80:
-        bytes_list.insert(0, 0x00)
-    encoded = bytes(bytes_list)
+    if value > 0:
+        byte_length = (value.bit_length() + 8) // 8
+    else:
+        byte_length = (-value - 1).bit_length() // 8 + 1
+    encoded = value.to_bytes(byte_length, byteorder='big', signed=True)
+    if value > 0 and encoded[0] & 0x80:
+        encoded = b'\x00' + encoded
     return bytes([TAG_INTEGER]) + _encode_length(len(encoded)) + encoded
 
 
@@ -229,6 +222,8 @@ def _decode_value(data, offset):
     elif tag == TAG_OID:
         oid_str, new_offset = _decode_oid(data, offset, length)
         return tag, oid_str, new_offset
+    elif tag == TAG_SEQUENCE:
+        return tag, length, offset + length
     elif tag == TAG_COUNTER32 or tag == TAG_GAUGE32 or tag == TAG_TIMETICKS:
         value = int.from_bytes(data[offset:offset + length], byteorder='big', signed=False)
         return tag, value, offset + length
@@ -242,12 +237,14 @@ def _decode_value(data, offset):
 
 def _parse_varbind(data, offset):
     """Parse one VarBind (SEQUENCE { OID, value }). Returns (oid, value, type_tag, new_offset)."""
-    seq_tag, seq_len_or_val, seq_start = _decode_value(data, offset)
-    if seq_tag != TAG_SEQUENCE:
-        raise ValueError(f'Expected SEQUENCE in VarBind, got tag 0x{seq_tag:02x}')
-    seq_end = seq_start + seq_len_or_val
+    if offset >= len(data) or data[offset] != TAG_SEQUENCE:
+        raise ValueError(f'Expected SEQUENCE in VarBind at offset {offset}')
+    offset += 1
+    seq_len, offset = _decode_length(data, offset)
+    content_start = offset
+    seq_end = content_start + seq_len
 
-    oid_tag, oid_val, after_oid = _decode_value(data, seq_start)
+    oid_tag, oid_val, after_oid = _decode_value(data, content_start)
     if oid_tag != TAG_OID:
         raise ValueError(f'Expected OID in VarBind, got tag 0x{oid_tag:02x}')
 
@@ -258,12 +255,14 @@ def _parse_varbind(data, offset):
 
 def _parse_varbind_list(data, offset):
     """Parse a VarBindList (SEQUENCE of VarBinds). Returns list of (oid, value, type_tag)."""
-    seq_tag, seq_len, seq_start = _decode_value(data, offset)
-    if seq_tag != TAG_SEQUENCE:
-        raise ValueError(f'Expected SEQUENCE in VarBindList, got tag 0x{seq_tag:02x}')
-    seq_end = seq_start + seq_len
+    if offset >= len(data) or data[offset] != TAG_SEQUENCE:
+        raise ValueError(f'Expected SEQUENCE in VarBindList at offset {offset}')
+    offset += 1
+    seq_len, offset = _decode_length(data, offset)
+    content_start = offset
+    seq_end = content_start + seq_len
     results = []
-    pos = seq_start
+    pos = content_start
     while pos < seq_end:
         oid, value, vtag, pos = _parse_varbind(data, pos)
         results.append((oid, value, vtag))
@@ -277,12 +276,13 @@ def _build_request(oid_str, request_id, community, version=VERSION_2C, pdu_tag=T
     oid_encoded = _encode_oid(oid_str)
     varbind = _encode_sequence([oid_encoded, _encode_null()])
     varbind_list = _encode_sequence([varbind])
-    pdu = bytes([pdu_tag]) + _encode_length(
+    pdu_content = (
         _encode_integer(request_id)
         + _encode_integer(0)  # error-status
         + _encode_integer(0)  # error-index
         + varbind_list
     )
+    pdu = bytes([pdu_tag]) + _encode_length(len(pdu_content)) + pdu_content
     packet = _encode_sequence([
         _encode_integer(version),
         _encode_octet_string(community),
@@ -302,7 +302,7 @@ def _build_getbulk_request(oid_str, request_id, community, max_repetitions=10):
         + _encode_integer(max_repetitions)
         + varbind_list
     )
-    pdu = bytes([TAG_GET_BULK_REQUEST]) + _encode_length(pdu_content)
+    pdu = bytes([TAG_GET_BULK_REQUEST]) + _encode_length(len(pdu_content)) + pdu_content
     packet = _encode_sequence([
         _encode_integer(VERSION_2C),
         _encode_octet_string(community),
@@ -315,10 +315,13 @@ def _parse_response(data):
     """Parse an SNMP GET RESPONSE packet. Returns list of (oid, value, type_tag)."""
     offset = 0
     # Outer SEQUENCE
-    seq_tag, seq_len, seq_start = _decode_value(data, offset)
-    if seq_tag != TAG_SEQUENCE:
-        raise SnmpError(f'Invalid response: expected SEQUENCE, got tag 0x{seq_tag:02x}')
-    offset = seq_start
+    if offset >= len(data) or data[offset] != TAG_SEQUENCE:
+        raise SnmpError('Invalid response: expected SEQUENCE')
+    offset += 1
+    seq_len, offset = _decode_length(data, offset)
+    content_start = offset
+    seq_end = content_start + seq_len
+    offset = content_start
 
     # Version
     ver_tag, version, offset = _decode_value(data, offset)
@@ -331,9 +334,12 @@ def _parse_response(data):
         raise SnmpError(f'Invalid response: expected community OCTET STRING')
 
     # PDU
-    pdu_tag, pdu_len, pdu_start = _decode_value(data, offset)
+    pdu_tag = data[offset]
     if pdu_tag not in (TAG_GET_RESPONSE,):
         raise SnmpError(f'Invalid response: expected GetResponse, got tag 0x{pdu_tag:02x}')
+    offset += 1
+    pdu_len, offset = _decode_length(data, offset)
+    pdu_start = offset
 
     # request-id
     rid_tag, request_id, offset = _decode_value(data, pdu_start)
@@ -449,7 +455,7 @@ def get_multiple(ip, oids, community='public', timeout_sec=3, retries=2, port=16
         + _encode_integer(0)  # error-index
         + varbind_list
     )
-    pdu = bytes([TAG_GET_REQUEST]) + _encode_length(pdu_content)
+    pdu = bytes([TAG_GET_REQUEST]) + _encode_length(len(pdu_content)) + pdu_content
     packet = _encode_sequence([
         _encode_integer(VERSION_2C),
         _encode_octet_string(community),

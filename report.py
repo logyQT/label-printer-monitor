@@ -146,6 +146,12 @@ def _get_shift_for_time(timestamp_str, shifts):
     """Determine which shift a timestamp belongs to."""
     try:
         time_part = timestamp_str[11:16]  # HH:MM
+        if len(time_part) != 5 or time_part[2] != ':':
+            return 'Unknown'
+        h = int(time_part[:2])
+        m = int(time_part[3:5])
+        if h > 23 or m > 59:
+            return 'Unknown'
     except (IndexError, ValueError):
         return 'Unknown'
 

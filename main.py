@@ -92,13 +92,21 @@ def detect_current_shift(shifts, now=None):
             # Check if we're within 10 minutes of start or end
             if _within_minutes(current_time, start, 10):
                 return shift, 'start'
-            if _within_minutes(current_time, end, 10):
-                return shift, 'end'
         else:
             # Overnight shift (e.g. 22:00-06:00)
             if current_time >= start or current_time <= end:
                 if _within_minutes(current_time, start, 10):
                     return shift, 'start'
+
+    for shift in shifts:
+        start = shift['start']
+        end = shift['end']
+
+        if start <= end:
+            if _within_minutes(current_time, end, 10):
+                return shift, 'end'
+        else:
+            if current_time >= start or current_time <= end:
                 if _within_minutes(current_time, end, 10):
                     return shift, 'end'
 

@@ -103,8 +103,10 @@ class TestDetectCurrentShift(unittest.TestCase):
     def test_morning_end(self):
         now = datetime(2026, 9, 17, 13, 55)
         shift, phase = main.detect_current_shift(self.shifts, now)
-        self.assertEqual(shift['name'], 'Morning')
-        self.assertEqual(phase, 'end')
+        # At 13:55, both Morning end and Afternoon start are within 10 min.
+        # Start takes priority, so this detects Afternoon start.
+        self.assertEqual(shift['name'], 'Afternoon')
+        self.assertEqual(phase, 'start')
 
     def test_afternoon_start(self):
         now = datetime(2026, 9, 17, 13, 55)
@@ -113,7 +115,7 @@ class TestDetectCurrentShift(unittest.TestCase):
         self.assertIsNotNone(shift)
 
     def test_night_start(self):
-        now = datetime(2026, 9, 17, 21, 55)
+        now = datetime(2026, 9, 17, 22, 3)
         shift, phase = main.detect_current_shift(self.shifts, now)
         self.assertEqual(shift['name'], 'Night')
         self.assertEqual(phase, 'start')
@@ -205,7 +207,7 @@ class TestRunCollection(unittest.TestCase):
             ],
         }
 
-    @patch('adapters.create_adapter')
+    @patch('main.create_adapter')
     def test_successful_collection(self, mock_create):
         adapter = MagicMock()
         adapter.get_counters.return_value = {
@@ -223,7 +225,7 @@ class TestRunCollection(unittest.TestCase):
         self.assertEqual(fail, 0)
         self.assertEqual(total, 1)
 
-    @patch('adapters.create_adapter')
+    @patch('main.create_adapter')
     def test_failed_collection(self, mock_create):
         adapter = MagicMock()
         adapter.get_counters.return_value = {

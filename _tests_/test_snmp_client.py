@@ -189,7 +189,7 @@ class TestEncodeInteger(unittest.TestCase):
 
     def test_large_positive(self):
         result = _encode_integer(1000000)
-        expected = b'\x02\x04\x00\x0f\x42\x40'
+        expected = b'\x02\x03\x0f\x42\x40'
         self.assertEqual(result, expected)
 
 
@@ -252,8 +252,8 @@ class TestEncodeOid(unittest.TestCase):
 
     def test_large_subid(self):
         result = _encode_oid('1.3.6.1.4.1.10642')
-        # 10642 = 0x2992, encoded as multi-byte
-        self.assertIn(b'\x29\x92', result)
+        # 10642 = 0xD312 in BER base-128 encoding
+        self.assertIn(b'\xd3\x12', result)
 
 
 class TestEncodeSequence(unittest.TestCase):
@@ -298,8 +298,10 @@ class TestDecodeOid(unittest.TestCase):
         self.assertEqual(oid, '1.3')
 
     def test_large_subid(self):
-        data = b'\x29\x92'
-        oid, offset = _decode_oid(data, 0, 2)
+        # Full encoding of 1.3.6.1.4.1.10642
+        # 1.3 -> 0x2B, 6 -> 0x06, 1 -> 0x01, 4 -> 0x04, 1 -> 0x01, 10642 -> 0xD3 0x12
+        data = b'\x2b\x06\x01\x04\x01\xd3\x12'
+        oid, offset = _decode_oid(data, 0, len(data))
         self.assertEqual(oid, '1.3.6.1.4.1.10642')
 
     def test_offset_in_data(self):
@@ -460,7 +462,7 @@ class TestParseResponse(unittest.TestCase):
             + _encode_integer(0)  # error-index
             + varbind_list
         )
-        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(pdu_content)
+        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(len(pdu_content)) + pdu_content
         packet = _encode_sequence([
             _encode_integer(VERSION_2C),
             _encode_octet_string('public'),
@@ -492,7 +494,7 @@ class TestParseResponse(unittest.TestCase):
             + _encode_integer(1)  # error-index
             + varbind_list
         )
-        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(pdu_content)
+        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(len(pdu_content)) + pdu_content
         packet = _encode_sequence([
             _encode_integer(VERSION_2C),
             _encode_octet_string('public'),
@@ -533,7 +535,7 @@ class TestSnmpGetFunction(unittest.TestCase):
             + _encode_integer(0)
             + varbind_list
         )
-        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(pdu_content)
+        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(len(pdu_content)) + pdu_content
         packet = _encode_sequence([
             _encode_integer(VERSION_2C),
             _encode_octet_string('public'),
@@ -578,7 +580,7 @@ class TestSnmpGetFunction(unittest.TestCase):
             + _encode_integer(0)
             + varbind_list
         )
-        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(pdu_content)
+        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(len(pdu_content)) + pdu_content
         packet = _encode_sequence([
             _encode_integer(VERSION_2C),
             _encode_octet_string('public'),
@@ -612,7 +614,7 @@ class TestSnmpGetMultipleFunction(unittest.TestCase):
             + _encode_integer(0)
             + vbl
         )
-        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(pdu_content)
+        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(len(pdu_content)) + pdu_content
         packet = _encode_sequence([
             _encode_integer(VERSION_2C),
             _encode_octet_string('public'),
@@ -651,7 +653,7 @@ class TestSnmpGetBulkFunction(unittest.TestCase):
             + _encode_integer(0)
             + vbl
         )
-        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(pdu_content)
+        pdu = bytes([TAG_GET_RESPONSE]) + _encode_length(len(pdu_content)) + pdu_content
         packet = _encode_sequence([
             _encode_integer(VERSION_2C),
             _encode_octet_string('public'),
