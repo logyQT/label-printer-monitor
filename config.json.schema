@@ -39,6 +39,13 @@
         }
       }
     },
+    "sato_unit_map": {
+      "type": "object",
+      "description": "Map of Sato prtMarkerCounterUnit codes to unit strings",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "shifts": {
       "type": "array",
       "description": "Work shift definitions",
@@ -82,7 +89,8 @@
               "Zebra ZT230",
               "Zebra ZT411",
               "Zebra GX430t",
-              "Zebra ZD621"
+              "Zebra ZD621",
+              "Sato CL4NX Plus"
             ]
           },
           "location": {

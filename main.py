@@ -159,6 +159,7 @@ def run_collection(config, shift_phase=None, shift_name=None):
     community = snmp_config.get('community', 'public')
     timeout = snmp_config.get('timeout_sec', 3)
     retries = snmp_config.get('retries', 2)
+    sato_unit_map = config.get('sato_unit_map', {})
 
     success = 0
     fail = 0
@@ -178,6 +179,7 @@ def run_collection(config, shift_phase=None, shift_name=None):
                 community=community,
                 timeout_sec=timeout,
                 retries=retries,
+                unit_map=sato_unit_map,
             )
             counters = collect_printer(adapter, printer_cfg)
 
