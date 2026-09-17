@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project - environment-specific
+config.json
+
+# Runtime data
+*.db
+*.db-wal
+*.db-shm
+logs/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
