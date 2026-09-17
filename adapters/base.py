@@ -17,11 +17,13 @@ class PrinterAdapter(ABC):
 
     OIDS = {}  # Subclasses override this
 
-    def __init__(self, ip, community='public', timeout_sec=3, retries=2):
+    def __init__(self, ip, community='public', timeout_sec=5, retries=2,
+                 version=0, **kwargs):
         self.ip = ip
         self.community = community
         self.timeout_sec = timeout_sec
         self.retries = retries
+        self.version = version  # 0=SNMPv1, 1=SNMPv2c
 
     @abstractmethod
     def get_counters(self) -> dict:
@@ -55,6 +57,7 @@ class PrinterAdapter(ABC):
                 community=self.community,
                 timeout_sec=self.timeout_sec,
                 retries=self.retries,
+                version=self.version,
             )
             return value, type_tag
         except (SnmpTimeout, SnmpError):

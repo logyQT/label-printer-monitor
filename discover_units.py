@@ -14,10 +14,11 @@ import os
 import sys
 
 from snmp_client import get, SnmpTimeout, SnmpError
-from adapters.zebra import (
-    OID_MARKER_COUNTER_UNIT, OID_ZEBRA_METERS_TOTAL,
-    OID_ZEBRA_MODEL_NAME, OID_SERIAL, OID_SYS_DESCR,
-)
+from adapters.zebra import OID_ZEBRA_MODEL_NAME, OID_ZEBRA_SERIAL
+from adapters.sato import OID_MARKER_COUNTER_UNIT
+
+OID_SYS_DESCR = '1.3.6.1.2.1.1.1.0'
+OID_ZEBRA_METERS_TOTAL = '1.3.6.1.4.1.10642.20.17.3.0'
 
 
 UNIT_MAP = {
@@ -88,7 +89,7 @@ def discover_printer(ip, community='public', timeout_sec=3, retries=2):
     # Get serial
     serial = ''
     try:
-        serial_val, _ = get(ip, OID_SERIAL, community, timeout_sec, retries)
+        serial_val, _ = get(ip, OID_ZEBRA_SERIAL, community, timeout_sec, retries)
         if serial_val is not None:
             if isinstance(serial_val, bytes):
                 serial = serial_val.decode('ascii', errors='replace')

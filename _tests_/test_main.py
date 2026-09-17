@@ -44,7 +44,7 @@ class TestLoadConfig(unittest.TestCase):
 
     def test_config_has_shifts(self):
         config = main.load_config('config.json')
-        self.assertEqual(len(config['shifts']), 3)
+        self.assertEqual(len(config['shifts']), 2)
 
     def test_missing_config_exits(self):
         with self.assertRaises(SystemExit) as ctx:

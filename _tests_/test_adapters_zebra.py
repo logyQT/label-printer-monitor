@@ -20,17 +20,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapters.zebra import (
     ZebraAdapter,
-    OID_SYS_DESCR,
-    OID_SERIAL,
+    OID_ZEBRA_MODEL_NAME,
+    OID_ZEBRA_FIRMWARE,
+    OID_ZEBRA_FRIENDLY_NAME,
+    OID_ZEBRA_SERIAL,
+    OID_ZEBRA_LABELS_NONRESET,
+    OID_ZEBRA_LABELS_RESET1,
     OID_HR_MODEL,
     OID_HR_STATUS,
-    OID_MARKER_LIFE_COUNT,
-    OID_MARKER_COUNTER_UNIT,
-    OID_ZEBRA_LABELS_TOTAL,
-    OID_ZEBRA_METERS_TOTAL,
-    OID_ZEBRA_MODEL_NAME,
-    OID_ZEBRA_FRIENDLY_NAME,
-    OID_ZEBRA_ALT_LABELS,
     UNIT_MAP,
 )
 from adapters.base import TAG_INTEGER, TAG_COUNTER32, TAG_OCTET_STRING
@@ -39,38 +36,29 @@ from adapters.base import TAG_INTEGER, TAG_COUNTER32, TAG_OCTET_STRING
 class TestOidConstants(unittest.TestCase):
     """Tests for OID constant values."""
 
-    def test_sys_descr(self):
-        self.assertEqual(OID_SYS_DESCR, '1.3.6.1.2.1.1.1.0')
-
-    def test_serial(self):
-        self.assertEqual(OID_SERIAL, '1.3.6.1.2.1.43.5.1.1.17.1')
-
     def test_hr_model(self):
         self.assertEqual(OID_HR_MODEL, '1.3.6.1.2.1.25.3.2.1.3.1')
 
     def test_hr_status(self):
         self.assertEqual(OID_HR_STATUS, '1.3.6.1.2.1.25.3.5.1.1.1')
 
-    def test_marker_life_count(self):
-        self.assertEqual(OID_MARKER_LIFE_COUNT, '1.3.6.1.2.1.43.10.2.1.4.1.1')
-
-    def test_marker_counter_unit(self):
-        self.assertEqual(OID_MARKER_COUNTER_UNIT, '1.3.6.1.2.1.43.10.2.1.3.1')
-
-    def test_zebra_labels_total(self):
-        self.assertEqual(OID_ZEBRA_LABELS_TOTAL, '1.3.6.1.4.1.10642.20.17.2.0')
-
-    def test_zebra_meters_total(self):
-        self.assertEqual(OID_ZEBRA_METERS_TOTAL, '1.3.6.1.4.1.10642.20.17.3.0')
-
     def test_zebra_model_name(self):
         self.assertEqual(OID_ZEBRA_MODEL_NAME, '1.3.6.1.4.1.10642.1.1.0')
 
-    def test_zebra_friendly_name(self):
-        self.assertEqual(OID_ZEBRA_FRIENDLY_NAME, '1.3.6.1.4.1.10642.20.3.5.0')
+    def test_zebra_firmware(self):
+        self.assertEqual(OID_ZEBRA_FIRMWARE, '1.3.6.1.4.1.10642.1.2.0')
 
-    def test_zebra_alt_labels(self):
-        self.assertEqual(OID_ZEBRA_ALT_LABELS, '1.3.6.1.4.1.10642.3.1.6.0')
+    def test_zebra_friendly_name(self):
+        self.assertEqual(OID_ZEBRA_FRIENDLY_NAME, '1.3.6.1.4.1.10642.1.4.0')
+
+    def test_zebra_serial(self):
+        self.assertEqual(OID_ZEBRA_SERIAL, '1.3.6.1.4.1.10642.1.9.0')
+
+    def test_zebra_labels_nonreset(self):
+        self.assertEqual(OID_ZEBRA_LABELS_NONRESET, '1.3.6.1.4.1.10642.3.1.6.0')
+
+    def test_zebra_labels_reset1(self):
+        self.assertEqual(OID_ZEBRA_LABELS_RESET1, '1.3.6.1.4.1.10642.3.1.13.0')
 
 
 class TestUnitMap(unittest.TestCase):
@@ -103,12 +91,9 @@ class TestZebraAdapterInit(unittest.TestCase):
 
     def test_oids_defined(self):
         self.assertIn('labels_total', ZebraAdapter.OIDS)
-        self.assertIn('meters_total', ZebraAdapter.OIDS)
         self.assertIn('model_name', ZebraAdapter.OIDS)
         self.assertIn('serial', ZebraAdapter.OIDS)
         self.assertIn('status', ZebraAdapter.OIDS)
-        self.assertIn('counter_unit', ZebraAdapter.OIDS)
-        self.assertIn('life_count', ZebraAdapter.OIDS)
 
 
 class TestZebraGetCounters(unittest.TestCase):
@@ -123,13 +108,10 @@ class TestZebraGetCounters(unittest.TestCase):
 
         def side_effect(oid):
             responses = {
-                OID_SYS_DESCR: (b'Zebra ZT230', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
                 OID_ZEBRA_MODEL_NAME: (b'ZTC ZT230-200dpi ZPL', TAG_OCTET_STRING),
-                OID_SERIAL: (b'ABC123', TAG_OCTET_STRING),
-                OID_ZEBRA_LABELS_TOTAL: (5000, TAG_COUNTER32),
-                OID_ZEBRA_METERS_TOTAL: (1234.5, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (5, TAG_INTEGER),
+                OID_ZEBRA_SERIAL: (b'ABC123', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (5000, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
@@ -138,8 +120,8 @@ class TestZebraGetCounters(unittest.TestCase):
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 5000)
-        self.assertEqual(result['meters_total'], 1234.5)
-        self.assertEqual(result['meter_unit'], 'linearMeters')
+        self.assertIsNone(result['meters_total'])
+        self.assertEqual(result['meter_unit'], 'unknown')
         self.assertEqual(result['model_name'], 'ZTC ZT230-200dpi ZPL')
         self.assertEqual(result['serial'], 'ABC123')
         self.assertEqual(result['status'], 'idle')
@@ -155,19 +137,16 @@ class TestZebraGetCounters(unittest.TestCase):
         self.assertIsNone(result['meters_total'])
 
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_labels_fallback_to_life_count(self, mock_get):
+    def test_labels_fallback_to_reset_counter(self, mock_get):
         adapter = self._make_adapter()
 
         def side_effect(oid):
             responses = {
-                OID_SYS_DESCR: (b'Zebra', TAG_OCTET_STRING),
+                OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
+                OID_ZEBRA_SERIAL: (b'SN123', TAG_OCTET_STRING),
                 OID_HR_STATUS: (3, TAG_INTEGER),
-                OID_ZEBRA_MODEL_NAME: (b'Zebra ZT230', TAG_OCTET_STRING),
-                OID_SERIAL: (b'SN123', TAG_OCTET_STRING),
-                OID_ZEBRA_LABELS_TOTAL: (None, None),  # vendor OID fails
-                OID_ZEBRA_METERS_TOTAL: (100.0, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (3, TAG_INTEGER),
-                OID_MARKER_LIFE_COUNT: (9999, TAG_COUNTER32),  # fallback
+                OID_ZEBRA_LABELS_NONRESET: (None, None),
+                OID_ZEBRA_LABELS_RESET1: (9999, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
@@ -183,13 +162,10 @@ class TestZebraGetCounters(unittest.TestCase):
 
         def side_effect(oid):
             responses = {
-                OID_SYS_DESCR: (b'Zebra', TAG_OCTET_STRING),
+                OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
+                OID_ZEBRA_SERIAL: (b'SN123', TAG_OCTET_STRING),
                 OID_HR_STATUS: (3, TAG_INTEGER),
-                OID_ZEBRA_MODEL_NAME: (b'Zebra ZT230', TAG_OCTET_STRING),
-                OID_SERIAL: (b'SN123', TAG_OCTET_STRING),
-                OID_ZEBRA_LABELS_TOTAL: (100, TAG_COUNTER32),
-                OID_ZEBRA_METERS_TOTAL: (None, None),  # not available
-                OID_MARKER_COUNTER_UNIT: (None, None),
+                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
@@ -199,25 +175,23 @@ class TestZebraGetCounters(unittest.TestCase):
         self.assertIsNone(result['meters_total'])
 
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_unit_assumed_when_vendor_oid_available(self, mock_get):
+    def test_meters_always_unknown(self, mock_get):
         adapter = self._make_adapter()
 
         def side_effect(oid):
             responses = {
-                OID_SYS_DESCR: (b'Zebra', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
                 OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
-                OID_SERIAL: (b'SN', TAG_OCTET_STRING),
-                OID_ZEBRA_LABELS_TOTAL: (100, TAG_COUNTER32),
-                OID_ZEBRA_METERS_TOTAL: (50.0, TAG_COUNTER32),  # available
-                OID_MARKER_COUNTER_UNIT: (None, None),  # but unit not
+                OID_ZEBRA_SERIAL: (b'SN', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
         mock_get.side_effect = side_effect
         result = adapter.get_counters()
 
-        self.assertIn('assumed', result['meter_unit'])
+        self.assertIsNone(result['meters_total'])
+        self.assertEqual(result['meter_unit'], 'unknown')
 
     @patch.object(ZebraAdapter, '_snmp_get')
     def test_status_codes(self, mock_get):
@@ -235,13 +209,10 @@ class TestZebraGetCounters(unittest.TestCase):
 
         for code, expected_status in status_codes.items():
             mock_get.side_effect = lambda oid, c=code: {
-                OID_SYS_DESCR: (b'Zebra', TAG_OCTET_STRING),
-                OID_HR_STATUS: (c, TAG_INTEGER),
                 OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
-                OID_SERIAL: (b'SN', TAG_OCTET_STRING),
-                OID_ZEBRA_LABELS_TOTAL: (0, TAG_COUNTER32),
-                OID_ZEBRA_METERS_TOTAL: (0, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (None, None),
+                OID_ZEBRA_SERIAL: (b'SN', TAG_OCTET_STRING),
+                OID_HR_STATUS: (c, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (0, TAG_COUNTER32),
             }.get(oid, (None, None))
 
             result = adapter.get_counters()
@@ -253,13 +224,10 @@ class TestZebraGetCounters(unittest.TestCase):
 
         def side_effect(oid):
             responses = {
-                OID_SYS_DESCR: (b'Zebra', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
                 OID_ZEBRA_MODEL_NAME: (b'ZTC ZD621-203dpi ZPL', TAG_OCTET_STRING),
-                OID_SERIAL: (b'XYZ789', TAG_OCTET_STRING),
-                OID_ZEBRA_LABELS_TOTAL: (100, TAG_COUNTER32),
-                OID_ZEBRA_METERS_TOTAL: (50.0, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (None, None),
+                OID_ZEBRA_SERIAL: (b'XYZ789', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 

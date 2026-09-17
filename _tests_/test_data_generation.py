@@ -22,7 +22,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
-from adapters.zebra import ZebraAdapter, UNIT_MAP, OID_ZEBRA_LABELS_TOTAL, OID_ZEBRA_METERS_TOTAL
+from adapters.zebra import ZebraAdapter, UNIT_MAP, OID_ZEBRA_LABELS_NONRESET
 from adapters.base import TAG_INTEGER, TAG_COUNTER32, TAG_OCTET_STRING, TAG_GAUGE32
 from snmp_client import (
     _encode_integer,
@@ -402,13 +402,10 @@ class TestRealisticPrinterResponses(unittest.TestCase):
 
         def side_effect(oid):
             responses = {
-                '1.3.6.1.2.1.1.1.0': (b'Zebra ZT230', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),  # idle
                 '1.3.6.1.4.1.10642.1.1.0': (b'ZTC ZT230-200dpi ZPL', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.43.5.1.1.17.1': (b'55J12345', TAG_OCTET_STRING),
-                '1.3.6.1.4.1.10642.20.17.2.0': (15234, TAG_COUNTER32),  # labels
-                '1.3.6.1.4.1.10642.20.17.3.0': (761700, TAG_COUNTER32),  # meters
-                '1.3.6.1.2.1.43.10.2.1.3.1': (5, TAG_INTEGER),  # linearMeters
+                '1.3.6.1.4.1.10642.1.9.0': (b'55J12345', TAG_OCTET_STRING),
+                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),  # idle
+                '1.3.6.1.4.1.10642.3.1.6.0': (15234, TAG_COUNTER32),  # labels
             }
             return responses.get(oid, (None, None))
 
@@ -417,8 +414,7 @@ class TestRealisticPrinterResponses(unittest.TestCase):
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 15234)
-        self.assertEqual(result['meters_total'], 761700.0)
-        self.assertEqual(result['meter_unit'], 'linearMeters')
+        self.assertIsNone(result['meters_total'])
         self.assertEqual(result['model_name'], 'ZTC ZT230-200dpi ZPL')
         self.assertEqual(result['serial'], '55J12345')
         self.assertEqual(result['status'], 'idle')
@@ -430,13 +426,10 @@ class TestRealisticPrinterResponses(unittest.TestCase):
 
         def side_effect(oid):
             responses = {
-                '1.3.6.1.2.1.1.1.0': (b'Zebra GX430t', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (4, TAG_INTEGER),  # printing
                 '1.3.6.1.4.1.10642.1.1.0': (b'ZTC GX430t-203dpi ZPL', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.43.5.1.1.17.1': (b'66K78901', TAG_OCTET_STRING),
-                '1.3.6.1.4.1.10642.20.17.2.0': (8901, TAG_COUNTER32),  # labels
-                '1.3.6.1.4.1.10642.20.17.3.0': (None, None),  # no meters
-                '1.3.6.1.2.1.43.10.2.1.3.1': (3, TAG_INTEGER),  # sheets
+                '1.3.6.1.4.1.10642.1.9.0': (b'66K78901', TAG_OCTET_STRING),
+                '1.3.6.1.2.1.25.3.5.1.1.1': (4, TAG_INTEGER),  # printing
+                '1.3.6.1.4.1.10642.3.1.6.0': (8901, TAG_COUNTER32),  # labels
             }
             return responses.get(oid, (None, None))
 
@@ -446,7 +439,6 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 8901)
         self.assertIsNone(result['meters_total'])
-        self.assertEqual(result['meter_unit'], 'sheets')
         self.assertEqual(result['status'], 'printing')
 
     @patch.object(ZebraAdapter, '_snmp_get')
@@ -456,13 +448,10 @@ class TestRealisticPrinterResponses(unittest.TestCase):
 
         def side_effect(oid):
             responses = {
-                '1.3.6.1.2.1.1.1.0': (b'Zebra ZD621', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),  # idle
                 '1.3.6.1.4.1.10642.1.1.0': (b'ZTC ZD621-203dpi ZPL', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.43.5.1.1.17.1': (b'77L45678', TAG_OCTET_STRING),
-                '1.3.6.1.4.1.10642.20.17.2.0': (45678, TAG_COUNTER32),
-                '1.3.6.1.4.1.10642.20.17.3.0': (2283900, TAG_COUNTER32),
-                '1.3.6.1.2.1.43.10.2.1.3.1': (5, TAG_INTEGER),  # linearMeters
+                '1.3.6.1.4.1.10642.1.9.0': (b'77L45678', TAG_OCTET_STRING),
+                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),  # idle
+                '1.3.6.1.4.1.10642.3.1.6.0': (45678, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
@@ -471,8 +460,7 @@ class TestRealisticPrinterResponses(unittest.TestCase):
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 45678)
-        self.assertEqual(result['meters_total'], 2283900.0)
-        self.assertEqual(result['meter_unit'], 'linearMeters')
+        self.assertIsNone(result['meters_total'])
         self.assertEqual(result['model_name'], 'ZTC ZD621-203dpi ZPL')
         self.assertEqual(result['serial'], '77L45678')
 
@@ -520,8 +508,8 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         adapter = self._make_adapter()
 
         def side_effect(oid):
-            # Only sysDescr and status respond
-            if oid == '1.3.6.1.2.1.1.1.0':
+            # Only model name and status respond
+            if oid == '1.3.6.1.4.1.10642.1.1.0':
                 return (b'Zebra', TAG_OCTET_STRING)
             if oid == '1.3.6.1.2.1.25.3.5.1.1.1':
                 return (3, TAG_INTEGER)
@@ -534,7 +522,7 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertTrue(result['reachable'])
         self.assertIsNone(result['labels_total'])
         self.assertIsNone(result['meters_total'])
-        self.assertEqual(result['model_name'], '')
+        self.assertEqual(result['model_name'], 'Zebra')
 
 
 class TestDataPipeline(unittest.TestCase):

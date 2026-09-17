@@ -2,43 +2,53 @@
 
 Uses standard RFC 3805 Printer MIB OIDs.
 Sato does not expose vendor-specific enterprise OIDs.
+
+Tested OIDs on CL4NX Plus:
+- 43.10.2.1.4.1.1 = prtMarkerLifeCount (total labels/length)
+- 43.10.2.1.3.1.1 = prtMarkerCounterUnit (17 = vendor-specific)
+- 43.5.1.1.16.1 = prtGeneralPrinterName
+- 43.5.1.1.17.1 = prtGeneralSerialNumber
+- 25.3.5.1.1.1 = hrPrinterStatus
 """
 
 from adapters.base import PrinterAdapter, TAG_INTEGER, TAG_COUNTER32
 
 
-# Standard RFC 3805 Printer MIB OIDs
+# Standard RFC 3805 Printer MIB OIDs - WORKING on CL4NX Plus
 OID_PRINTER_NAME = '1.3.6.1.2.1.43.5.1.1.16.1'
 OID_SERIAL = '1.3.6.1.2.1.43.5.1.1.17.1'
 OID_MARKER_LIFE_COUNT = '1.3.6.1.2.1.43.10.2.1.4.1.1'
 OID_MARKER_COUNTER_UNIT = '1.3.6.1.2.1.43.10.2.1.3.1.1'
+OID_HR_STATUS = '1.3.6.1.2.1.25.3.5.1.1.1'
 
 
 class SatoAdapter(PrinterAdapter):
     """Adapter for Sato printers (CL4NX Plus).
 
-    Sato printers use standard RFC 3805 OIDs only.
-    prtMarkerLifeCount returns total media length in meters.
-    prtMarkerCounterUnit returns a vendor-specific code (17 = meters).
+    Uses SNMPv1 by default.
+    prtMarkerLifeCount returns total media length.
+    prtMarkerCounterUnit returns vendor code (17 = mapped via unit_map).
     """
 
     OIDS = {
         'model_name': OID_PRINTER_NAME,
+        'serial': OID_SERIAL,
         'meters_total': OID_MARKER_LIFE_COUNT,
         'counter_unit': OID_MARKER_COUNTER_UNIT,
+        'status': OID_HR_STATUS,
     }
 
-    def __init__(self, ip, community='public', timeout_sec=3, retries=2,
-                 unit_map=None):
-        super().__init__(ip, community, timeout_sec, retries)
+    def __init__(self, ip, community='public', timeout_sec=5, retries=2,
+                 version=1, unit_map=None, **kwargs):
+        super().__init__(ip, community, timeout_sec, retries, version, **kwargs)
         self.unit_map = unit_map or {}
 
     def get_counters(self) -> dict:
         """Query Sato printer counters via SNMP.
 
         Returns:
-            dict with meters_total, model_name, reachable status.
-            labels_total is always None (not available on Sato).
+            dict with meters_total, model_name, serial, status.
+            labels_total is not available on Sato via SNMP.
         """
         result = {
             'labels_total': None,
@@ -50,17 +60,39 @@ class SatoAdapter(PrinterAdapter):
             'reachable': False,
         }
 
-        # Reachability check via printer name
+        # Reachability check: try multiple OIDs (Sato is flaky)
         model_name, _ = self._snmp_get(OID_PRINTER_NAME)
         if model_name is None:
-            return result
+            # Fallback: try serial
+            serial_check, _ = self._snmp_get(OID_SERIAL)
+            if serial_check is None:
+                # Fallback: try life count
+                life_check, _ = self._snmp_get(OID_MARKER_LIFE_COUNT)
+                if life_check is None:
+                    return result
+            else:
+                if isinstance(serial_check, bytes):
+                    serial_check = serial_check.decode('ascii', errors='replace')
+                result['serial'] = serial_check or ''
+        else:
+            if isinstance(model_name, bytes):
+                model_name = model_name.decode('ascii', errors='replace')
+            result['model_name'] = model_name or ''
+
         result['reachable'] = True
 
-        if isinstance(model_name, bytes):
-            model_name = model_name.decode('ascii', errors='replace')
-        result['model_name'] = model_name or ''
+        # Get serial if not already fetched
+        if not result['serial']:
+            serial, _ = self._snmp_get(OID_SERIAL)
+            if isinstance(serial, bytes):
+                serial = serial.decode('ascii', errors='replace')
+            result['serial'] = serial or ''
 
-        # Get meters total
+        # Get status
+        status_code, _ = self._snmp_get(OID_HR_STATUS)
+        result['status'] = self._status_from_code(status_code)
+
+        # Get meters total (prtMarkerLifeCount)
         meters, _ = self._snmp_get(OID_MARKER_LIFE_COUNT)
         if meters is not None:
             result['meters_total'] = float(meters)
@@ -78,4 +110,10 @@ class SatoAdapter(PrinterAdapter):
     def is_reachable(self) -> bool:
         """Check if printer responds to SNMP."""
         model_name, _ = self._snmp_get(OID_PRINTER_NAME)
-        return model_name is not None
+        if model_name is not None:
+            return True
+        serial, _ = self._snmp_get(OID_SERIAL)
+        if serial is not None:
+            return True
+        life_count, _ = self._snmp_get(OID_MARKER_LIFE_COUNT)
+        return life_count is not None

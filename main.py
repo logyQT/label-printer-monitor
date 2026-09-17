@@ -179,6 +179,7 @@ def run_collection(config, shift_phase=None, shift_name=None):
                 community=community,
                 timeout_sec=timeout,
                 retries=retries,
+                version=0,  # SNMPv1 - more reliable on wireless
                 unit_map=sato_unit_map,
             )
             counters = collect_printer(adapter, printer_cfg)

@@ -28,8 +28,8 @@ def get_adapter_class(model):
     raise ValueError(f'No adapter found for model: {model}')
 
 
-def create_adapter(model, ip, community='public', timeout_sec=3, retries=2,
-                   **kwargs):
+def create_adapter(model, ip, community='public', timeout_sec=5, retries=2,
+                   version=0, **kwargs):
     """Create an adapter instance for the given model and IP.
 
     Args:
@@ -38,6 +38,7 @@ def create_adapter(model, ip, community='public', timeout_sec=3, retries=2,
         community: SNMP community string.
         timeout_sec: SNMP timeout.
         retries: SNMP retry count.
+        version: SNMP version (0=SNMPv1, 1=SNMPv2c). Default: 0 (v1).
         **kwargs: Additional adapter-specific arguments (e.g. unit_map).
 
     Returns:
@@ -45,4 +46,4 @@ def create_adapter(model, ip, community='public', timeout_sec=3, retries=2,
     """
     cls = get_adapter_class(model)
     return cls(ip=ip, community=community, timeout_sec=timeout_sec,
-               retries=retries, **kwargs)
+               retries=retries, version=version, **kwargs)

@@ -1,28 +1,41 @@
 """Zebra printer adapter. Supports ZT230, ZT411, GX430t, ZD621.
 
-All Zebra printers share the enterprise OID tree under 1.3.6.1.4.1.10642.
+Uses SNMPv1 by default (more reliable on wireless printers).
+Vendor OIDs under enterprise 10642.
+
+Tested OIDs on ZT411:
+- 10642.1.1.0 = Model name
+- 10642.1.4.0 = Friendly name
+- 10642.1.9.0 = Serial number
+- 10642.3.1.6.0 = Labels count (NONRESET counter)
+- 10642.3.1.13.0 = Labels count (RESET counter)
+- 25.3.5.1.1.1 = hrPrinterStatus (idle/printing/etc)
 """
 
 from adapters.base import PrinterAdapter, TAG_COUNTER32, TAG_GAUGE32, TAG_INTEGER
 
 
-# Standard RFC 3805 Printer MIB OIDs (work on all Zebra models)
-OID_SYS_DESCR = '1.3.6.1.2.1.1.1.0'
-OID_SYS_NAME = '1.3.6.1.2.1.1.5.0'
-OID_SERIAL = '1.3.6.1.2.1.43.5.1.1.17.1'
+# Zebra vendor OIDs (enterprise 10642) - WORKING on ZT411
+OID_ZEBRA_MODEL_NAME = '1.3.6.1.4.1.10642.1.1.0'
+OID_ZEBRA_FIRMWARE = '1.3.6.1.4.1.10642.1.2.0'
+OID_ZEBRA_FRIENDLY_NAME = '1.3.6.1.4.1.10642.1.4.0'
+OID_ZEBRA_SERIAL = '1.3.6.1.4.1.10642.1.9.0'
+OID_ZEBRA_LABELS_NONRESET = '1.3.6.1.4.1.10642.3.1.6.0'
+OID_ZEBRA_LABELS_RESET1 = '1.3.6.1.4.1.10642.3.1.13.0'
+
+# Standard RFC 3805 / Host Resources - WORKING on ZT411
 OID_HR_MODEL = '1.3.6.1.2.1.25.3.2.1.3.1'
 OID_HR_STATUS = '1.3.6.1.2.1.25.3.5.1.1.1'
-OID_MARKER_LIFE_COUNT = '1.3.6.1.2.1.43.10.2.1.4.1.1'
-OID_MARKER_COUNTER_UNIT = '1.3.6.1.2.1.43.10.2.1.3.1'
 
-# Zebra vendor OIDs (enterprise 10642)
-OID_ZEBRA_LABELS_TOTAL = '1.3.6.1.4.1.10642.20.17.2.0'
-OID_ZEBRA_METERS_TOTAL = '1.3.6.1.4.1.10642.20.17.3.0'
-OID_ZEBRA_MODEL_NAME = '1.3.6.1.4.1.10642.1.1.0'
-OID_ZEBRA_FRIENDLY_NAME = '1.3.6.1.4.1.10642.20.3.5.0'
-OID_ZEBRA_ALT_LABELS = '1.3.6.1.4.1.10642.3.1.6.0'
+# OIDs that DO NOT WORK on ZT411 (timeouts)
+# - 10642.20.17.2.0 (QL series labels)
+# - 10642.20.17.3.0 (QL series meters) -> noSuchObject
+# - 43.10.2.1.4.1.1 (prtMarkerLifeCount) -> timeout
+# - 43.10.2.1.3.1 (prtMarkerCounterUnit) -> noSuchObject
+# - 43.5.1.1.17.1 (prtGeneralSerialNumber) -> noSuchObject
+# - 2.1.1.1.0 (sysDescr) -> timeout on wireless
 
-# prtMarkerCounterUnit values
+# prtMarkerCounterUnit values (RFC 3805)
 UNIT_MAP = {
     0: 'other',
     1: 'tenThousandthsOfSheets',
@@ -34,25 +47,27 @@ UNIT_MAP = {
 
 
 class ZebraAdapter(PrinterAdapter):
-    """Adapter for Zebra printers (ZT230, ZT411, GX430t, ZD621)."""
+    """Adapter for Zebra printers (ZT230, ZT411, GX430t, ZD621).
+
+    Uses SNMPv1 by default for better wireless reliability.
+    """
 
     OIDS = {
-        'labels_total': OID_ZEBRA_LABELS_TOTAL,
-        'meters_total': OID_ZEBRA_METERS_TOTAL,
         'model_name': OID_ZEBRA_MODEL_NAME,
-        'serial': OID_SERIAL,
+        'serial': OID_ZEBRA_SERIAL,
+        'labels_total': OID_ZEBRA_LABELS_NONRESET,
         'status': OID_HR_STATUS,
-        'counter_unit': OID_MARKER_COUNTER_UNIT,
-        'life_count': OID_MARKER_LIFE_COUNT,
     }
+
+    def __init__(self, ip, community='public', timeout_sec=5, retries=2,
+                 version=0, **kwargs):
+        super().__init__(ip, community, timeout_sec, retries, version, **kwargs)
 
     def get_counters(self) -> dict:
         """Query Zebra printer counters via SNMP.
 
-        Strategy:
-        1. Try vendor-specific OIDs first (labels_total, meters_total)
-        2. Fall back to RFC 3805 prtMarkerLifeCount if vendor OIDs fail
-        3. Detect meter unit from prtMarkerCounterUnit or config override
+        Uses vendor OIDs under enterprise 10642.
+        Falls back to Host Resources MIB for status/model.
         """
         result = {
             'labels_total': None,
@@ -64,61 +79,50 @@ class ZebraAdapter(PrinterAdapter):
             'reachable': False,
         }
 
-        # Quick reachability check via sysDescr
-        sys_descr, _ = self._snmp_get(OID_SYS_DESCR)
-        if sys_descr is None:
+        # Quick reachability check via model name
+        model_name, _ = self._snmp_get(OID_ZEBRA_MODEL_NAME)
+        if model_name is None:
+            # Fallback: try Host Resources model
+            model_name, _ = self._snmp_get(OID_HR_MODEL)
+        if model_name is None:
             return result
         result['reachable'] = True
+
+        if isinstance(model_name, bytes):
+            model_name = model_name.decode('ascii', errors='replace')
+        result['model_name'] = model_name or ''
+
+        # Get serial (vendor OID)
+        serial, _ = self._snmp_get(OID_ZEBRA_SERIAL)
+        if isinstance(serial, bytes):
+            serial = serial.decode('ascii', errors='replace')
+        result['serial'] = serial or ''
 
         # Get status
         status_code, status_tag = self._snmp_get(OID_HR_STATUS)
         result['status'] = self._status_from_code(status_code)
 
-        # Get model name (try vendor first, then standard)
-        model_name, _ = self._snmp_get(OID_ZEBRA_MODEL_NAME)
-        if model_name is None:
-            model_name, _ = self._snmp_get(OID_HR_MODEL)
-        if isinstance(model_name, bytes):
-            model_name = model_name.decode('ascii', errors='replace')
-        result['model_name'] = model_name or ''
-
-        # Get serial
-        serial, _ = self._snmp_get(OID_SERIAL)
-        if isinstance(serial, bytes):
-            serial = serial.decode('ascii', errors='replace')
-        result['serial'] = serial or ''
-
-        # Get labels total (vendor OID)
-        labels, labels_tag = self._snmp_get(OID_ZEBRA_LABELS_TOTAL)
+        # Get labels total (vendor OID - NONRESET counter)
+        labels, labels_tag = self._snmp_get(OID_ZEBRA_LABELS_NONRESET)
         if labels is not None:
             result['labels_total'] = int(labels)
         else:
-            # Fallback: use prtMarkerLifeCount
-            life_count, lc_tag = self._snmp_get(OID_MARKER_LIFE_COUNT)
-            if life_count is not None:
-                result['labels_total'] = int(life_count)
+            # Fallback: try RESET counter
+            labels, _ = self._snmp_get(OID_ZEBRA_LABELS_RESET1)
+            if labels is not None:
+                result['labels_total'] = int(labels)
 
-        # Get meters total (vendor OID)
-        meters, meters_tag = self._snmp_get(OID_ZEBRA_METERS_TOTAL)
-        if meters is not None:
-            result['meters_total'] = float(meters)
-        else:
-            # Fallback: no vendor OID, use life count (same as labels fallback)
-            # Meters unknown if vendor OID not available
-            result['meters_total'] = None
-
-        # Detect meter unit
-        unit_code, unit_tag = self._snmp_get(OID_MARKER_COUNTER_UNIT)
-        if unit_code is not None:
-            result['meter_unit'] = UNIT_MAP.get(unit_code, f'unknown({unit_code})')
-        elif meters is not None:
-            # Vendor OID responded but no unit OID — assume centimeters
-            # (Zebra firmware typically returns centimeters for meters_total)
-            result['meter_unit'] = 'cm (assumed)'
+        # Meters not available via SNMP on ZT411
+        # The printer shows 555,719 IN / 1,411,527 CM on its LCD
+        # but these OIDs timeout: 3.1.7.0, 3.1.8.0, 3.1.9.0
+        result['meters_total'] = None
+        result['meter_unit'] = 'unknown'
 
         return result
 
     def is_reachable(self) -> bool:
         """Check if printer responds to SNMP."""
-        sys_descr, _ = self._snmp_get(OID_SYS_DESCR)
-        return sys_descr is not None
+        model_name, _ = self._snmp_get(OID_ZEBRA_MODEL_NAME)
+        if model_name is None:
+            model_name, _ = self._snmp_get(OID_HR_MODEL)
+        return model_name is not None

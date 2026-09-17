@@ -173,7 +173,7 @@ class TestSnmpGetHelper(unittest.TestCase):
         self.assertEqual(tag, TAG_INTEGER)
         mock_get.assert_called_once_with(
             '10.0.0.1', '1.3.6.1.2.1.1.1.0',
-            community='public', timeout_sec=3, retries=2,
+            community='public', timeout_sec=5, retries=2, version=0,
         )
 
     @patch('snmp_client.get')
