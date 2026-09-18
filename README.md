@@ -5,7 +5,7 @@ Collects print counters from Zebra and Sato label printers via SNMP, stores them
 ## Setup
 
 ```bash
-pip install pysnmp
+pip install -r requirements.txt
 ```
 
 Edit `config.json` with your printers:
