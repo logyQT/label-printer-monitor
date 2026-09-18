@@ -22,7 +22,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
-from adapters.zebra import ZebraAdapter, OID_LABELS
+from adapters.zebra_zt411 import ZebraZT411Adapter, OID_LABELS
 from snmp_client import TAG_INTEGER, TAG_COUNTER32, TAG_OCTET_STRING, TAG_GAUGE32
 
 
@@ -288,10 +288,10 @@ class TestRealisticPrinterResponses(unittest.TestCase):
     """Tests simulating actual Zebra printer SNMP responses."""
 
     def _make_adapter(self, ip='192.168.40.249'):
-        return ZebraAdapter(ip, community='public', timeout_sec=3, retries=0)
+        return ZebraZT411Adapter(ip, community='public', timeout_sec=3, retries=0)
 
-    @patch.object(ZebraAdapter, '_snmp_get_retry')
-    @patch.object(ZebraAdapter, '_snmp_get')
+    @patch.object(ZebraZT411Adapter, '_snmp_get_retry')
+    @patch.object(ZebraZT411Adapter, '_snmp_get')
     def test_zt230_full_response(self, mock_get, mock_retry):
         """ZT230 with all OIDs available."""
         mock_get.return_value = (b'ZTC ZT230-200dpi ZPL', TAG_OCTET_STRING)
@@ -306,8 +306,8 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertEqual(result['meters_total'], 50000.0)
         self.assertEqual(result['model_name'], 'ZTC ZT230-200dpi ZPL')
 
-    @patch.object(ZebraAdapter, '_snmp_get_retry')
-    @patch.object(ZebraAdapter, '_snmp_get')
+    @patch.object(ZebraZT411Adapter, '_snmp_get_retry')
+    @patch.object(ZebraZT411Adapter, '_snmp_get')
     def test_gx430t_labels_only(self, mock_get, mock_retry):
         """GX430t with labels but no meters OID."""
         mock_get.return_value = (b'ZTC GX430t-203dpi ZPL', TAG_OCTET_STRING)
@@ -321,8 +321,8 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertEqual(result['labels_total'], 8901)
         self.assertIsNone(result['meters_total'])
 
-    @patch.object(ZebraAdapter, '_snmp_get_retry')
-    @patch.object(ZebraAdapter, '_snmp_get')
+    @patch.object(ZebraZT411Adapter, '_snmp_get_retry')
+    @patch.object(ZebraZT411Adapter, '_snmp_get')
     def test_printer_with_garbage_model_name(self, mock_get, mock_retry):
         """Printer returns non-standard model name."""
         mock_get.return_value = (b'UNKNOWN\x00\x01\x02', TAG_OCTET_STRING)
@@ -332,7 +332,7 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertTrue(result['reachable'])
         self.assertIn('UNKNOWN', result['model_name'])
 
-    @patch.object(ZebraAdapter, '_snmp_get')
+    @patch.object(ZebraZT411Adapter, '_snmp_get')
     def test_unreachable_printer(self, mock_get):
         """Printer is off the network."""
         mock_get.return_value = (None, None)
@@ -343,8 +343,8 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertIsNone(result['meters_total'])
         self.assertEqual(result['model_name'], '')
 
-    @patch.object(ZebraAdapter, '_snmp_get_retry')
-    @patch.object(ZebraAdapter, '_snmp_get')
+    @patch.object(ZebraZT411Adapter, '_snmp_get_retry')
+    @patch.object(ZebraZT411Adapter, '_snmp_get')
     def test_partial_oid_response(self, mock_get, mock_retry):
         """Some OIDs respond, others timeout."""
         mock_get.return_value = (b'Zebra', TAG_OCTET_STRING)

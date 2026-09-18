@@ -4,7 +4,7 @@ Tests cover:
 - Config loading
 - Epoch / shift helper functions
 - Unit conversion
-- compute_shift_deltas (with mocked DB)
+- compute_weekly (with mocked DB)
 - print_report (stdout output)
 - export_csv (file output)
 """
@@ -92,41 +92,6 @@ class TestToEpoch(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests for _epoch_to_shift
-# ---------------------------------------------------------------------------
-
-class TestEpochToShift(unittest.TestCase):
-    """Tests for _epoch_to_shift()."""
-
-    def setUp(self):
-        self.shifts = [
-            {'name': 'Morning', 'start': '06:00', 'end': '14:00'},
-            {'name': 'Afternoon', 'start': '14:00', 'end': '22:00'},
-        ]
-
-    def test_morning_shift(self):
-        epoch = _epoch_for_date('2026-09-17', 10, 0)
-        self.assertEqual(report._epoch_to_shift(epoch, self.shifts), 'Morning')
-
-    def test_afternoon_shift(self):
-        epoch = _epoch_for_date('2026-09-17', 16, 0)
-        self.assertEqual(report._epoch_to_shift(epoch, self.shifts), 'Afternoon')
-
-    def test_no_matching_shift(self):
-        epoch = _epoch_for_date('2026-09-17', 3, 0)  # 03:00 — no shift
-        self.assertIsNone(report._epoch_to_shift(epoch, self.shifts))
-
-    def test_empty_shifts(self):
-        epoch = _epoch_for_date('2026-09-17', 10, 0)
-        self.assertIsNone(report._epoch_to_shift(epoch, []))
-
-    def test_overnight_shift(self):
-        shifts = [{'name': 'Night', 'start': '22:00', 'end': '06:00'}]
-        epoch = _epoch_for_date('2026-09-17', 23, 0)
-        self.assertEqual(report._epoch_to_shift(epoch, shifts), 'Night')
-
-
-# ---------------------------------------------------------------------------
 # Tests for _convert_to_meters
 # ---------------------------------------------------------------------------
 
@@ -153,14 +118,14 @@ class TestConvertToMeters(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests for compute_shift_deltas
+# Tests for compute_weekly
 # ---------------------------------------------------------------------------
 
-class TestComputeShiftDeltas(unittest.TestCase):
-    """Tests for compute_shift_deltas() with real in-memory DB."""
+class TestComputeWeekly(unittest.TestCase):
+    """Tests for compute_weekly() with real in-memory DB."""
 
     def test_basic_morning_shift(self):
-        """Two snapshots in the Morning window should produce a delta."""
+        """Two snapshots in the same week should produce a delta."""
         config = _make_config()
         conn = db.init_db(':memory:')
 
@@ -175,16 +140,17 @@ class TestComputeShiftDeltas(unittest.TestCase):
         # Patch to return our still-open connection
         with patch('report.db.init_db', return_value=conn), \
              patch('report.db.close_db'):
-            results = report.compute_shift_deltas(config, '2026-09-17', '2026-09-17')
+            weeks = report.compute_weekly(config, '2026-09-17', '2026-09-17')
 
         db.close_db(conn)
-        self.assertTrue(len(results) >= 1)
-        zebras = [r for r in results if r['ip'] == '10.0.0.1']
+        self.assertIsInstance(weeks, dict)
+        self.assertTrue(len(weeks) >= 1)
+        all_printers = [r for printers in weeks.values() for r in printers]
+        zebras = [r for r in all_printers if r['ip'] == '10.0.0.1']
         self.assertTrue(len(zebras) >= 1)
         r = zebras[0]
-        self.assertEqual(r['shift'], 'Morning')
-        self.assertEqual(r['labels_delta'], 20)
-        self.assertAlmostEqual(r['meters_delta'], 0.1)  # 10 cm = 0.1 m
+        self.assertEqual(r['labels'], 20)
+        self.assertAlmostEqual(r['meters'], 0.1)  # 10 cm = 0.1 m
 
     def test_no_snapshots_returns_empty(self):
         """No snapshots in DB → empty results."""
@@ -193,10 +159,10 @@ class TestComputeShiftDeltas(unittest.TestCase):
 
         with patch('report.db.init_db', return_value=conn), \
              patch('report.db.close_db'):
-            results = report.compute_shift_deltas(config, '2026-09-17', '2026-09-17')
+            weeks = report.compute_weekly(config, '2026-09-17', '2026-09-17')
 
         db.close_db(conn)
-        self.assertEqual(results, [])
+        self.assertEqual(weeks, {})
 
     def test_multiple_printers(self):
         """Snapshots for two printers should yield rows for each."""
@@ -211,19 +177,19 @@ class TestComputeShiftDeltas(unittest.TestCase):
 
         with patch('report.db.init_db', return_value=conn), \
              patch('report.db.close_db'):
-            results = report.compute_shift_deltas(config, '2026-09-17', '2026-09-17')
+            weeks = report.compute_weekly(config, '2026-09-17', '2026-09-17')
 
         db.close_db(conn)
-        ips = {r['ip'] for r in results}
-        self.assertIn('10.0.0.1', ips)
-        self.assertIn('10.0.0.2', ips)
+        all_ips = {r['ip'] for printers in weeks.values() for r in printers}
+        self.assertIn('10.0.0.1', all_ips)
+        self.assertIn('10.0.0.2', all_ips)
 
-    def test_multiple_days(self):
-        """Snapshots on two consecutive days produce rows for each day."""
+    def test_multiple_weeks(self):
+        """Snapshots on two consecutive weeks produce entries for each week."""
         config = _make_config()
         conn = db.init_db(':memory:')
 
-        for day in ('2026-09-17', '2026-09-18'):
+        for day in ('2026-09-07', '2026-09-14'):
             db.save_snapshot(conn, '10.0.0.1', 50, 5.0, 'm', 'Zebra ZT230',
                              timestamp=_epoch_for_date(day, 8, 0))
             db.save_snapshot(conn, '10.0.0.1', 60, 6.0, 'm', 'Zebra ZT230',
@@ -231,15 +197,14 @@ class TestComputeShiftDeltas(unittest.TestCase):
 
         with patch('report.db.init_db', return_value=conn), \
              patch('report.db.close_db'):
-            results = report.compute_shift_deltas(config, '2026-09-17', '2026-09-18')
+            weeks = report.compute_weekly(config, '2026-09-07', '2026-09-14')
 
         db.close_db(conn)
-        dates = {r['date'] for r in results if r['ip'] == '10.0.0.1'}
-        self.assertIn('2026-09-17', dates)
-        self.assertIn('2026-09-18', dates)
+        self.assertIsInstance(weeks, dict)
+        self.assertTrue(len(weeks) >= 2)
 
     def test_single_snapshot_skipped(self):
-        """A single snapshot in a shift produces no delta (needs >= 2)."""
+        """A single snapshot in a week produces a zero delta."""
         config = _make_config()
         conn = db.init_db(':memory:')
 
@@ -248,10 +213,14 @@ class TestComputeShiftDeltas(unittest.TestCase):
 
         with patch('report.db.init_db', return_value=conn), \
              patch('report.db.close_db'):
-            results = report.compute_shift_deltas(config, '2026-09-17', '2026-09-17')
+            weeks = report.compute_weekly(config, '2026-09-17', '2026-09-17')
 
         db.close_db(conn)
-        self.assertEqual(results, [])
+        self.assertIsInstance(weeks, dict)
+        all_printers = [r for printers in weeks.values() for r in printers]
+        self.assertEqual(len(all_printers), 1)
+        self.assertEqual(all_printers[0]['labels'], 0)
+        self.assertAlmostEqual(all_printers[0]['meters'], 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -271,35 +240,40 @@ class TestPrintReport(unittest.TestCase):
 
     def test_prints_zebra_table(self):
         config = _make_config()
-        results = [
-            {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'shift': 'Morning',
-             'date': '2026-09-17', 'labels_delta': 150, 'meters_delta': 0.5},
-        ]
+        weeks = {
+            '2026-W37': [
+                {'ip': '10.0.0.1', 'model': 'Zebra ZT230',
+                 'labels': 150, 'meters': 0.5},
+            ],
+        }
         with patch('builtins.print') as mock_print:
-            report.print_report(results, config)
+            report.print_report(weeks, config)
         text = self._get_printed_text(mock_print)
-        self.assertIn('ZEBRA', text)
+        self.assertIn('Zebra', text)
         self.assertIn('10.0.0.1', text)
         self.assertIn('150', text)
 
     def test_prints_sato_table(self):
         config = _make_config()
-        results = [
-            {'ip': '10.0.0.2', 'model': 'Sato CL4NX Plus', 'shift': 'Morning',
-             'date': '2026-09-17', 'labels_delta': None, 'meters_delta': 3.2},
-        ]
+        weeks = {
+            '2026-W37': [
+                {'ip': '10.0.0.2', 'model': 'Sato CL4NX Plus',
+                 'labels': None, 'meters': 3.2},
+            ],
+        }
         with patch('builtins.print') as mock_print:
-            report.print_report(results, config)
+            report.print_report(weeks, config)
         text = self._get_printed_text(mock_print)
-        self.assertIn('SATO', text)
+        self.assertIn('Sato', text)
         self.assertIn('3.2', text)
 
     def test_empty_results(self):
         config = _make_config()
         with patch('builtins.print') as mock_print:
-            report.print_report([], config)
+            report.print_report({}, config)
         text = self._get_printed_text(mock_print)
-        self.assertIn('No shift data', text)
+        self.assertNotIn('WEEK ', text)
+        self.assertIn('GRAND TOTAL', text)
 
 
 # ---------------------------------------------------------------------------
@@ -311,34 +285,40 @@ class TestExportCsv(unittest.TestCase):
 
     def test_creates_csv_with_headers(self):
         config = _make_config()
-        results = [
-            {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'shift': 'Morning',
-             'date': '2026-09-17', 'labels_delta': 100, 'meters_delta': 1.5},
-            {'ip': '10.0.0.2', 'model': 'Sato CL4NX Plus', 'shift': 'Morning',
-             'date': '2026-09-17', 'labels_delta': None, 'meters_delta': 3.0},
-        ]
+        weeks = {
+            '2026-W37': [
+                {'ip': '10.0.0.1', 'model': 'Zebra ZT230',
+                 'labels': 100, 'meters': 1.5},
+                {'ip': '10.0.0.2', 'model': 'Sato CL4NX Plus',
+                 'labels': None, 'meters': 3.0},
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmpdir:
             csv_path = os.path.join(tmpdir, 'report.csv')
-            report.export_csv(results, config, csv_path)
+            report.export_csv(weeks, config, csv_path)
             self.assertTrue(os.path.exists(csv_path))
             with open(csv_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 headers = next(reader)
                 self.assertEqual(headers,
-                                 ['IP', 'Model', 'Shift', 'Date',
+                                 ['Week', 'IP', 'Model',
                                   'Labels Delta', 'Meters Delta (m)'])
 
     def test_csv_row_count(self):
         config = _make_config()
-        results = [
-            {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'shift': 'Morning',
-             'date': '2026-09-17', 'labels_delta': 50, 'meters_delta': 0.5},
-            {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'shift': 'Afternoon',
-             'date': '2026-09-17', 'labels_delta': 70, 'meters_delta': 0.8},
-        ]
+        weeks = {
+            '2026-W37': [
+                {'ip': '10.0.0.1', 'model': 'Zebra ZT230',
+                 'labels': 50, 'meters': 0.5},
+            ],
+            '2026-W38': [
+                {'ip': '10.0.0.1', 'model': 'Zebra ZT230',
+                 'labels': 70, 'meters': 0.8},
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmpdir:
             csv_path = os.path.join(tmpdir, 'report.csv')
-            report.export_csv(results, config, csv_path)
+            report.export_csv(weeks, config, csv_path)
             with open(csv_path, 'r', encoding='utf-8') as f:
                 lines = f.read().strip().split('\n')
                 # header + 2 data rows
@@ -346,20 +326,22 @@ class TestExportCsv(unittest.TestCase):
 
     def test_none_values_written_as_empty(self):
         config = _make_config()
-        results = [
-            {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'shift': 'Morning',
-             'date': '2026-09-17', 'labels_delta': None, 'meters_delta': None},
-        ]
+        weeks = {
+            '2026-W37': [
+                {'ip': '10.0.0.1', 'model': 'Zebra ZT230',
+                 'labels': None, 'meters': None},
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmpdir:
             csv_path = os.path.join(tmpdir, 'report.csv')
-            report.export_csv(results, config, csv_path)
+            report.export_csv(weeks, config, csv_path)
             with open(csv_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 next(reader)  # skip header
                 row = next(reader)
                 # labels and meters columns should be empty strings
+                self.assertEqual(row[3], '')
                 self.assertEqual(row[4], '')
-                self.assertEqual(row[5], '')
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +358,7 @@ class TestMainFunction(unittest.TestCase):
                 'printers': [],
                 'shifts': [],
             }
-            with patch('report.compute_shift_deltas', return_value=[]) as mock_compute, \
+            with patch('report.compute_weekly', return_value=[]) as mock_compute, \
                  patch('report.print_report') as mock_print, \
                  patch('sys.argv', ['report.py']):
                 report.main()
@@ -390,7 +372,7 @@ class TestMainFunction(unittest.TestCase):
                 'printers': [],
                 'shifts': [],
             }
-            with patch('report.compute_shift_deltas', return_value=[]) as mock_compute, \
+            with patch('report.compute_weekly', return_value=[]) as mock_compute, \
                  patch('report.export_csv') as mock_export, \
                  patch('sys.argv', ['report.py', '--csv']):
                 report.main()
@@ -404,7 +386,7 @@ class TestMainFunction(unittest.TestCase):
                 'printers': [],
                 'shifts': [],
             }
-            with patch('report.compute_shift_deltas', return_value=[]) as mock_compute, \
+            with patch('report.compute_weekly', return_value=[]) as mock_compute, \
                  patch('report.print_report'), \
                  patch('sys.argv', ['report.py', '--from', '2026-09-10', '--to', '2026-09-15']):
                 report.main()

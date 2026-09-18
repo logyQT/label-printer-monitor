@@ -1,7 +1,7 @@
 """Tests for adapters/__init__.py - adapter registry.
 
 Tests cover:
-- Adapter registration
+- Adapter registration for all models
 - Model prefix resolution
 - Adapter creation
 - Error handling for unknown models
@@ -15,7 +15,9 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapters import get_adapter_class, create_adapter, ADAPTER_REGISTRY
-from adapters.zebra import ZebraAdapter
+from adapters.zebra_zt411 import ZebraZT411Adapter
+from adapters.zebra_gx430t import ZebraGX430tAdapter
+from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
 
 
 class TestAdapterRegistry(unittest.TestCase):
@@ -24,39 +26,54 @@ class TestAdapterRegistry(unittest.TestCase):
     def test_registry_not_empty(self):
         self.assertGreater(len(ADAPTER_REGISTRY), 0)
 
-    def test_zebra_registered(self):
-        self.assertIn('zebra', ADAPTER_REGISTRY)
+    def test_registry_has_three_entries(self):
+        self.assertEqual(len(ADAPTER_REGISTRY), 3)
 
-    def test_zebra_class(self):
-        self.assertEqual(ADAPTER_REGISTRY['zebra'], ZebraAdapter)
+    def test_zebra_zt411_registered(self):
+        self.assertIn('zebra zt411', ADAPTER_REGISTRY)
+
+    def test_zebra_gx430t_registered(self):
+        self.assertIn('zebra gx430t', ADAPTER_REGISTRY)
+
+    def test_sato_cl4nx_plus_registered(self):
+        self.assertIn('sato cl4nx plus', ADAPTER_REGISTRY)
+
+    def test_zebra_zt411_class(self):
+        self.assertEqual(ADAPTER_REGISTRY['zebra zt411'], ZebraZT411Adapter)
+
+    def test_zebra_gx430t_class(self):
+        self.assertEqual(ADAPTER_REGISTRY['zebra gx430t'], ZebraGX430tAdapter)
+
+    def test_sato_cl4nx_plus_class(self):
+        self.assertEqual(ADAPTER_REGISTRY['sato cl4nx plus'], SatoCL4NXPlusAdapter)
 
 
 class TestGetAdapterClass(unittest.TestCase):
     """Tests for get_adapter_class()."""
 
-    def test_zebra_zt230(self):
-        cls = get_adapter_class('Zebra ZT230')
-        self.assertEqual(cls, ZebraAdapter)
-
     def test_zebra_zt411(self):
         cls = get_adapter_class('Zebra ZT411')
-        self.assertEqual(cls, ZebraAdapter)
+        self.assertEqual(cls, ZebraZT411Adapter)
 
     def test_zebra_gx430t(self):
         cls = get_adapter_class('Zebra GX430t')
-        self.assertEqual(cls, ZebraAdapter)
+        self.assertEqual(cls, ZebraGX430tAdapter)
 
-    def test_zebra_zd621(self):
-        cls = get_adapter_class('Zebra ZD621')
-        self.assertEqual(cls, ZebraAdapter)
+    def test_sato_cl4nx_plus(self):
+        cls = get_adapter_class('Sato CL4NX Plus')
+        self.assertEqual(cls, SatoCL4NXPlusAdapter)
 
-    def test_case_insensitive(self):
-        cls = get_adapter_class('zebra zt230')
-        self.assertEqual(cls, ZebraAdapter)
+    def test_case_insensitive_zt411(self):
+        cls = get_adapter_class('zebra zt411')
+        self.assertEqual(cls, ZebraZT411Adapter)
 
-    def test_mixed_case(self):
-        cls = get_adapter_class('ZEBRA ZT230')
-        self.assertEqual(cls, ZebraAdapter)
+    def test_case_insensitive_gx430t(self):
+        cls = get_adapter_class('ZEBRA GX430T')
+        self.assertEqual(cls, ZebraGX430tAdapter)
+
+    def test_case_insensitive_sato(self):
+        cls = get_adapter_class('SATO CL4NX PLUS')
+        self.assertEqual(cls, SatoCL4NXPlusAdapter)
 
     def test_unknown_model_raises(self):
         with self.assertRaises(ValueError) as ctx:
@@ -67,36 +84,44 @@ class TestGetAdapterClass(unittest.TestCase):
         with self.assertRaises(ValueError):
             get_adapter_class('')
 
-    def test_partial_match(self):
-        cls = get_adapter_class('Zebra ZT230 Industrial')
-        self.assertEqual(cls, ZebraAdapter)
+    def test_partial_match_zebra(self):
+        cls = get_adapter_class('Zebra ZT411 Industrial')
+        self.assertEqual(cls, ZebraZT411Adapter)
+
+    def test_partial_match_sato(self):
+        cls = get_adapter_class('Sato CL4NX Plus v2')
+        self.assertEqual(cls, SatoCL4NXPlusAdapter)
 
 
 class TestCreateAdapter(unittest.TestCase):
     """Tests for create_adapter()."""
 
-    def test_create_zebra_adapter(self):
-        adapter = create_adapter('Zebra ZT230', '10.0.0.1')
-        self.assertIsInstance(adapter, ZebraAdapter)
+    def test_create_zebra_zt411(self):
+        adapter = create_adapter('Zebra ZT411', '10.0.0.1')
+        self.assertIsInstance(adapter, ZebraZT411Adapter)
         self.assertEqual(adapter.ip, '10.0.0.1')
 
+    def test_create_zebra_gx430t(self):
+        adapter = create_adapter('Zebra GX430t', '10.0.0.2')
+        self.assertIsInstance(adapter, ZebraGX430tAdapter)
+        self.assertEqual(adapter.ip, '10.0.0.2')
+
+    def test_create_sato_cl4nx_plus(self):
+        adapter = create_adapter('Sato CL4NX Plus', '10.0.0.3')
+        self.assertIsInstance(adapter, SatoCL4NXPlusAdapter)
+        self.assertEqual(adapter.ip, '10.0.0.3')
+
     def test_create_with_community(self):
-        adapter = create_adapter('Zebra ZT230', '10.0.0.1', community='private')
+        adapter = create_adapter('Zebra ZT411', '10.0.0.1', community='private')
         self.assertEqual(adapter.community, 'private')
 
     def test_create_with_timeout(self):
-        adapter = create_adapter('Zebra ZT230', '10.0.0.1', timeout_sec=5)
-        self.assertEqual(adapter.timeout_sec, 5)
+        adapter = create_adapter('Zebra ZT411', '10.0.0.1', timeout_sec=10)
+        self.assertEqual(adapter.timeout_sec, 10)
 
     def test_create_with_retries(self):
-        adapter = create_adapter('Zebra ZT230', '10.0.0.1', retries=3)
-        self.assertEqual(adapter.retries, 3)
-
-    def test_create_all_models(self):
-        models = ['Zebra ZT230', 'Zebra ZT411', 'Zebra GX430t', 'Zebra ZD621']
-        for model in models:
-            adapter = create_adapter(model, '10.0.0.1')
-            self.assertIsInstance(adapter, ZebraAdapter)
+        adapter = create_adapter('Zebra ZT411', '10.0.0.1', retries=5)
+        self.assertEqual(adapter.retries, 5)
 
     def test_unknown_model_raises(self):
         with self.assertRaises(ValueError):

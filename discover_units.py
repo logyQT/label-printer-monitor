@@ -14,8 +14,8 @@ import os
 import sys
 
 from snmp_client import get, SnmpTimeout, SnmpError
-from adapters.zebra import OID_REACHABILITY as OID_ZEBRA_MODEL_NAME
-from adapters.sato import OID_UNIT as OID_MARKER_COUNTER_UNIT
+from adapters.zebra_zt411 import OID_REACHABILITY as OID_ZEBRA_MODEL_NAME
+from adapters.sato_cl4nx_plus import OID_UNIT as OID_MARKER_COUNTER_UNIT
 
 OID_SYS_DESCR = '1.3.6.1.2.1.1.1.0'
 OID_ZEBRA_METERS_TOTAL = '1.3.6.1.4.1.10642.20.17.3.0'

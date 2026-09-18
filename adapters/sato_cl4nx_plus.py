@@ -1,20 +1,21 @@
-"""Sato printer adapter. Supports CL4NX Plus.
+"""Sato CL4NX Plus adapter.
 
 Two SNMP requests total:
 1. Poke (GET) — check reachability
 2. Meters + unit with exponential backoff retry
+
+No label count available via SNMP on Sato.
 """
 
 from adapters.base import PrinterAdapter
 
 
-# OIDs
-OID_REACHABILITY = '1.3.6.1.2.1.43.5.1.1.16.1'  # printer name — quick poke
+OID_REACHABILITY = '1.3.6.1.2.1.43.5.1.1.16.1'  # printer name
 OID_METERS = '1.3.6.1.2.1.43.10.2.1.4.1.1'     # prtMarkerLifeCount
 OID_UNIT = '1.3.6.1.2.1.43.10.2.1.3.1.1'        # prtMarkerCounterUnit
 
 
-class SatoAdapter(PrinterAdapter):
+class SatoCL4NXPlusAdapter(PrinterAdapter):
 
     OIDS = {
         'model_name': OID_REACHABILITY,
@@ -28,14 +29,10 @@ class SatoAdapter(PrinterAdapter):
 
     def get_counters(self) -> dict:
         result = {
-            'labels_total': None,
-            'meters_total': None,
-            'meter_unit': 'unknown',
-            'model_name': '',
-            'reachable': False,
+            'labels_total': None, 'meters_total': None, 'meter_unit': 'unknown',
+            'model_name': '', 'reachable': False,
         }
 
-        # 1) Poke — is it alive?
         model, _ = self._snmp_get(OID_REACHABILITY, label='poke')
         if model is None:
             return result
@@ -44,12 +41,10 @@ class SatoAdapter(PrinterAdapter):
             model = model.decode('ascii', errors='replace')
         result['model_name'] = model or ''
 
-        # 2) Meters — retry with backoff
         meters, _ = self._snmp_get_retry(OID_METERS, label='meters')
         if meters is not None:
             result['meters_total'] = float(meters)
 
-        # 3) Unit — retry with backoff
         unit_code, _ = self._snmp_get_retry(OID_UNIT, label='unit')
         if unit_code is not None:
             code_str = str(int(unit_code))

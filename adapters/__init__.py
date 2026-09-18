@@ -1,19 +1,21 @@
-"""Adapter registry: maps model prefixes to adapter classes."""
+"""Adapter registry: maps model names to adapter classes."""
 
-from adapters.zebra import ZebraAdapter
-from adapters.sato import SatoAdapter
+from adapters.zebra_zt411 import ZebraZT411Adapter
+from adapters.zebra_gx430t import ZebraGX430tAdapter
+from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
 
 ADAPTER_REGISTRY = {
-    'zebra': ZebraAdapter,
-    'sato': SatoAdapter,
+    'zebra zt411': ZebraZT411Adapter,
+    'zebra gx430t': ZebraGX430tAdapter,
+    'sato cl4nx plus': SatoCL4NXPlusAdapter,
 }
 
 
 def get_adapter_class(model):
-    """Resolve adapter class by model string prefix.
+    """Resolve adapter class by model string (case-insensitive).
 
     Args:
-        model: Printer model string like 'Zebra ZT230'.
+        model: Printer model string like 'Zebra ZT411'.
 
     Returns:
         Adapter class (subclass of PrinterAdapter).
@@ -30,20 +32,7 @@ def get_adapter_class(model):
 
 def create_adapter(model, ip, community='public', timeout_sec=5, retries=2,
                    version=0, **kwargs):
-    """Create an adapter instance for the given model and IP.
-
-    Args:
-        model: Printer model string.
-        ip: Printer IP address.
-        community: SNMP community string.
-        timeout_sec: SNMP timeout.
-        retries: SNMP retry count.
-        version: SNMP version (0=SNMPv1, 1=SNMPv2c). Default: 0 (v1).
-        **kwargs: Additional adapter-specific arguments (e.g. unit_map).
-
-    Returns:
-        PrinterAdapter instance.
-    """
+    """Create an adapter instance for the given model and IP."""
     cls = get_adapter_class(model)
     return cls(ip=ip, community=community, timeout_sec=timeout_sec,
                retries=retries, version=version, **kwargs)

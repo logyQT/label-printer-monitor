@@ -123,7 +123,7 @@ async def _async_get(ip, oid, community='public', timeout_sec=3, retries=2,
     target = await _create_target(ip, port, timeout_sec, retries)
     error_indication, error_status, error_index, var_binds = await _async_get_cmd(
         dispatcher,
-        CommunityData(community),
+        CommunityData(community, mpModel=version),
         target,
         ObjectType(ObjectIdentity(oid)),
     )
@@ -141,14 +141,14 @@ async def _async_get(ip, oid, community='public', timeout_sec=3, retries=2,
 
 
 async def _async_get_bulk(ip, oid, community='public', max_repetitions=10,
-                          timeout_sec=3, retries=2, port=161):
+                          timeout_sec=3, retries=2, port=161, version=VERSION_2C):
     """Async SNMP GETBULK. Returns list of (oid, value, type_tag)."""
     dispatcher = SnmpDispatcher()
     target = await _create_target(ip, port, timeout_sec, retries)
     results = []
     async for (error_indication, error_status, error_index, var_binds) in _async_bulk_cmd(
         dispatcher,
-        CommunityData(community),
+        CommunityData(community, mpModel=version),
         target,
         ObjectType(ObjectIdentity(oid)),
         max_repetitions,
@@ -187,10 +187,10 @@ def get(ip, oid, community='public', timeout_sec=3, retries=2, port=161,
 
 
 def get_bulk(ip, oid, community='public', max_repetitions=10, timeout_sec=3,
-             retries=2, port=161):
+             retries=2, port=161, version=VERSION_2C):
     """SNMP GETBULK. Returns list of (oid, value, type_tag)."""
     return asyncio.run(_async_get_bulk(ip, oid, community, max_repetitions,
-                                       timeout_sec, retries, port))
+                                       timeout_sec, retries, port, version))
 
 
 # get_multiple kept for backward compat (delegates to individual gets)
