@@ -72,28 +72,11 @@ class PrinterAdapter(ABC):
             return None, None
 
     def _snmp_get_multiple(self, oids, label=None):
-        """Helper: multi-OID SNMP GET. Falls back to individual GETs on failure."""
-        from snmp_client import get_multiple, get, SnmpTimeout, SnmpError
+        """Helper: fetch multiple OIDs via individual GETs."""
+        from snmp_client import get, SnmpTimeout, SnmpError
         tag = label or f"multi({len(oids)})"
-        oid_list = ', '.join(oids)
 
-        # Try multi-OID GET first
-        try:
-            logging.debug(f"  SNMP GET  {self.ip} [{tag}] oids: {oid_list}")
-            results = get_multiple(
-                self.ip, oids,
-                community=self.community,
-                timeout_sec=self.timeout_sec,
-                retries=self.retries,
-            )
-            for oid, value, type_tag in results:
-                logging.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
-            return results
-        except (SnmpTimeout, SnmpError) as e:
-            logging.debug(f"  SNMP FAIL {self.ip} batch FAILED  [{tag}]: {e}")
-            logging.debug(f"  SNMP FALLBACK {self.ip} individual GETs  [{tag}]")
-
-        # Fallback: individual GETs
+        logging.debug(f"  SNMP GET  {self.ip} [{tag}] {len(oids)} oids")
         results = []
         for oid in oids:
             try:
