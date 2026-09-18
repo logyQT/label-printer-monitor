@@ -7,7 +7,6 @@ Tests cover:
 - Snapshot retrieval
 - Shift delta calculation
 - History queries
-- Unit caching
 - Timestamp rounding
 - Row to dict conversion
 """
@@ -39,14 +38,6 @@ class TestInitDb(unittest.TestCase):
         conn = db.init_db(self.test_db)
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='snapshots'"
-        )
-        self.assertIsNotNone(cursor.fetchone())
-        conn.close()
-
-    def test_creates_printer_units_table(self):
-        conn = db.init_db(self.test_db)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='printer_units'"
         )
         self.assertIsNotNone(cursor.fetchone())
         conn.close()
@@ -270,37 +261,6 @@ class TestGetPrintersByShift(unittest.TestCase):
         db.save_snapshot(self.conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra', timestamp='2026-09-17T14:00:00')
         result = db.get_printers_by_shift(self.conn, '2026-09-17T06:00:00', '2026-09-17T14:00:00')
         self.assertEqual(len(result), 1)
-
-
-class TestSaveAndGetPrinterUnit(unittest.TestCase):
-    """Tests for save_printer_unit() and get_printer_unit()."""
-
-    def setUp(self):
-        self.conn = db.init_db(':memory:')
-
-    def tearDown(self):
-        db.close_db(self.conn)
-
-    def test_save_and_get(self):
-        db.save_printer_unit(self.conn, '10.0.0.1', 'cm')
-        result = db.get_printer_unit(self.conn, '10.0.0.1')
-        self.assertEqual(result, 'cm')
-
-    def test_get_nonexistent_returns_none(self):
-        result = db.get_printer_unit(self.conn, '10.0.0.1')
-        self.assertIsNone(result)
-
-    def test_overwrite_existing(self):
-        db.save_printer_unit(self.conn, '10.0.0.1', 'cm')
-        db.save_printer_unit(self.conn, '10.0.0.1', 'mm')
-        result = db.get_printer_unit(self.conn, '10.0.0.1')
-        self.assertEqual(result, 'mm')
-
-    def test_different_printers(self):
-        db.save_printer_unit(self.conn, '10.0.0.1', 'cm')
-        db.save_printer_unit(self.conn, '10.0.0.2', 'mm')
-        self.assertEqual(db.get_printer_unit(self.conn, '10.0.0.1'), 'cm')
-        self.assertEqual(db.get_printer_unit(self.conn, '10.0.0.2'), 'mm')
 
 
 class TestGetHistory(unittest.TestCase):

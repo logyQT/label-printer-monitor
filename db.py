@@ -20,12 +20,6 @@ CREATE TABLE IF NOT EXISTS snapshots (
     PRIMARY KEY (printer_ip, timestamp)
 );
 
-CREATE TABLE IF NOT EXISTS printer_units (
-    printer_ip    TEXT PRIMARY KEY,
-    meter_unit    TEXT NOT NULL,
-    detected_at   TEXT NOT NULL
-);
-
 CREATE INDEX IF NOT EXISTS idx_snapshots_ip ON snapshots(printer_ip);
 CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON snapshots(timestamp);
 CREATE INDEX IF NOT EXISTS idx_snapshots_ip_ts ON snapshots(printer_ip, timestamp);
@@ -226,42 +220,6 @@ def get_printers_by_shift(conn, shift_start, shift_end):
                 **delta,
             })
     return results
-
-
-def save_printer_unit(conn, printer_ip, meter_unit):
-    """Save detected meter unit for a printer. Idempotent.
-
-    Args:
-        conn: SQLite connection.
-        printer_ip: Printer IP.
-        meter_unit: Detected unit string.
-    """
-    now = datetime.now().isoformat()
-    conn.execute(
-        """INSERT OR REPLACE INTO printer_units
-           (printer_ip, meter_unit, detected_at)
-           VALUES (?, ?, ?)""",
-        (printer_ip, meter_unit, now)
-    )
-    conn.commit()
-
-
-def get_printer_unit(conn, printer_ip):
-    """Get cached meter unit for a printer.
-
-    Args:
-        conn: SQLite connection.
-        printer_ip: Printer IP.
-
-    Returns:
-        Unit string or None.
-    """
-    cursor = conn.execute(
-        "SELECT meter_unit FROM printer_units WHERE printer_ip = ?",
-        (printer_ip,)
-    )
-    row = cursor.fetchone()
-    return row[0] if row else None
 
 
 def get_history(conn, printer_ip, start_date=None, end_date=None):
