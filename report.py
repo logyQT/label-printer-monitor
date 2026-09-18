@@ -87,14 +87,26 @@ def compute_shift_deltas(config, from_date, to_date):
 
     results = []
 
-    for printer_cfg in config.get('printers', []):
-        ip = printer_cfg['ip']
-        model = printer_cfg['model']
+    # Get all printer IPs that have data in range
+    printer_ips = [row[0] for row in conn.execute(
+        """SELECT DISTINCT printer_ip FROM snapshots
+           WHERE timestamp >= ? AND timestamp <= ?""",
+        (start_epoch, end_epoch)
+    ).fetchall()]
 
-        # Get all snapshots in range
-        rows = _get_snapshots_in_window(conn, ip, start_epoch, end_epoch)
-        if not rows:
-            continue
+    # Build model lookup: config first, then from DB snapshots
+    model_map = {p['ip']: p['model'] for p in config.get('printers', [])}
+    for ip in printer_ips:
+        if ip not in model_map:
+            row = conn.execute(
+                "SELECT model_name FROM snapshots WHERE printer_ip = ? AND model_name IS NOT NULL AND model_name != '' LIMIT 1",
+                (ip,)
+            ).fetchone()
+            if row:
+                model_map[ip] = row[0]
+
+    for ip in printer_ips:
+        model = model_map.get(ip, 'Unknown')
 
         # For each shift, find first and last snapshot in the window
         for shift in shifts:
@@ -109,6 +121,7 @@ def compute_shift_deltas(config, from_date, to_date):
             # Iterate each day in range
             current_date = datetime.fromisoformat(from_date).date()
             end_date = datetime.fromisoformat(to_date).date()
+            days_processed = 0
 
             while current_date <= end_date:
                 shift_start = datetime(current_date.year, current_date.month, current_date.day,
@@ -152,11 +165,18 @@ def compute_shift_deltas(config, from_date, to_date):
 
 def print_report(results, config):
     """Print a formatted shift report to stdout."""
-    printer_map = {p['ip']: p for p in config.get('printers', [])}
+    # Build model lookup: config first, then from results themselves
+    model_full = {p['ip']: p['model'] for p in config.get('printers', [])}
+    for r in results:
+        if r['ip'] not in model_full:
+            model_full[r['ip']] = r['model']
 
     # Separate Zebra (has labels) and Sato (meters only)
-    zebra = [r for r in results if 'zebra' in r['model'].lower()]
-    sato = [r for r in results if 'sato' in r['model'].lower()]
+    zebra = [r for r in results if 'zebra' in model_full.get(r['ip'], r['model']).lower()
+             or 'ztc' in model_full.get(r['ip'], r['model']).lower()]
+    sato = [r for r in results if 'sato' in model_full.get(r['ip'], r['model']).lower()
+            or 'cl4' in model_full.get(r['ip'], r['model']).lower()
+            or 'cl6' in model_full.get(r['ip'], r['model']).lower()]
 
     if zebra:
         print(f"\n{'='*80}")
@@ -167,7 +187,7 @@ def print_report(results, config):
         for r in sorted(zebra, key=lambda x: (x['date'], x['shift'])):
             labels = f"{r['labels_delta']:,}" if r['labels_delta'] is not None else '-'
             meters = f"{r['meters_delta']:,.1f}" if r['meters_delta'] is not None else '-'
-            model_short = r['model'].replace('Zebra ', '')
+            model_short = model_full.get(r['ip'], r['model'])
             print(f"  {r['ip']:<15} {model_short:<20} {r['shift']:<12} {r['date']:<12} {labels:>10} {meters:>12}")
 
         total_labels = sum(r['labels_delta'] or 0 for r in zebra)
@@ -184,7 +204,7 @@ def print_report(results, config):
         print(f"  {'-'*76}")
         for r in sorted(sato, key=lambda x: (x['date'], x['shift'])):
             meters = f"{r['meters_delta']:,.1f}" if r['meters_delta'] is not None else '-'
-            model_short = r['model'].replace('Sato ', '')
+            model_short = model_full.get(r['ip'], r['model'])
             print(f"  {r['ip']:<15} {model_short:<20} {r['shift']:<12} {r['date']:<12} {meters:>12}")
 
         total_meters = sum(r['meters_delta'] or 0 for r in sato)
