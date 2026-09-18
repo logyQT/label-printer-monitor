@@ -77,10 +77,14 @@ def setup_logging(log_dir='logs', verbose=False):
     # Root logger set to WARNING so pysnmp noise doesn't leak through
     root = logging.getLogger()
     root.setLevel(logging.WARNING)
+    # Remove any default handlers added by basicConfig
+    for h in root.handlers[:]:
+        root.removeHandler(h)
 
     # Our logger gets everything, filtered by handlers
     app_logger = logging.getLogger('printer_stats')
     app_logger.setLevel(logging.DEBUG)
+    app_logger.propagate = False  # Don't propagate to root
     app_logger.addHandler(file_handler)
     app_logger.addHandler(console_handler)
     return log_file
