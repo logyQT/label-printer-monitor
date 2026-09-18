@@ -68,19 +68,26 @@ class TestSatoGetCounters(unittest.TestCase):
         return SatoAdapter('10.0.0.1', community='public', timeout_sec=3,
                            retries=0, unit_map=unit_map or {})
 
+    @patch.object(SatoAdapter, '_snmp_get_multiple')
     @patch.object(SatoAdapter, '_snmp_get')
-    def test_successful_query(self, mock_get):
+    def test_successful_query(self, mock_get, mock_get_multi):
         adapter = self._make_adapter(unit_map={'17': 'm'})
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_PRINTER_NAME: (b'CL4NX Plus 305dpi', TAG_OCTET_STRING),
-                OID_MARKER_LIFE_COUNT: (27410, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (17, TAG_INTEGER),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_MARKER_LIFE_COUNT: (27410, TAG_COUNTER32),
+                OID_MARKER_COUNTER_UNIT: (17, TAG_INTEGER),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
@@ -99,91 +106,126 @@ class TestSatoGetCounters(unittest.TestCase):
         self.assertIsNone(result['meters_total'])
         self.assertEqual(result['labels_total'], None)
 
+    @patch.object(SatoAdapter, '_snmp_get_multiple')
     @patch.object(SatoAdapter, '_snmp_get')
-    def test_unmapped_unit_code(self, mock_get):
+    def test_unmapped_unit_code(self, mock_get, mock_get_multi):
         adapter = self._make_adapter(unit_map={})
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_PRINTER_NAME: (b'CL4NX Plus 305dpi', TAG_OCTET_STRING),
-                OID_MARKER_LIFE_COUNT: (1000, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (99, TAG_INTEGER),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_MARKER_LIFE_COUNT: (1000, TAG_COUNTER32),
+                OID_MARKER_COUNTER_UNIT: (99, TAG_INTEGER),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['meter_unit'], 'unit_code:99')
 
+    @patch.object(SatoAdapter, '_snmp_get_multiple')
     @patch.object(SatoAdapter, '_snmp_get')
-    def test_no_unit_oid(self, mock_get):
+    def test_no_unit_oid(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_PRINTER_NAME: (b'CL4NX Plus 305dpi', TAG_OCTET_STRING),
-                OID_MARKER_LIFE_COUNT: (5000, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (None, None),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_MARKER_LIFE_COUNT: (5000, TAG_COUNTER32),
+                OID_MARKER_COUNTER_UNIT: (None, None),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['meters_total'], 5000.0)
         self.assertEqual(result['meter_unit'], 'unknown')
 
+    @patch.object(SatoAdapter, '_snmp_get_multiple')
     @patch.object(SatoAdapter, '_snmp_get')
-    def test_meters_not_available(self, mock_get):
+    def test_meters_not_available(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_PRINTER_NAME: (b'CL4NX Plus 305dpi', TAG_OCTET_STRING),
-                OID_MARKER_LIFE_COUNT: (None, None),
-                OID_MARKER_COUNTER_UNIT: (None, None),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_MARKER_LIFE_COUNT: (None, None),
+                OID_MARKER_COUNTER_UNIT: (None, None),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertIsNone(result['meters_total'])
 
+    @patch.object(SatoAdapter, '_snmp_get_multiple')
     @patch.object(SatoAdapter, '_snmp_get')
-    def test_model_name_bytes_decoded(self, mock_get):
+    def test_model_name_bytes_decoded(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_PRINTER_NAME: (b'SATO CL4NX Plus 305dpi', TAG_OCTET_STRING),
-                OID_MARKER_LIFE_COUNT: (100, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (17, TAG_INTEGER),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_MARKER_LIFE_COUNT: (100, TAG_COUNTER32),
+                OID_MARKER_COUNTER_UNIT: (17, TAG_INTEGER),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertEqual(result['model_name'], 'SATO CL4NX Plus 305dpi')
 
+    @patch.object(SatoAdapter, '_snmp_get_multiple')
     @patch.object(SatoAdapter, '_snmp_get')
-    def test_labels_always_none(self, mock_get):
+    def test_labels_always_none(self, mock_get, mock_get_multi):
         adapter = self._make_adapter(unit_map={'17': 'm'})
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_PRINTER_NAME: (b'CL4NX Plus', TAG_OCTET_STRING),
-                OID_MARKER_LIFE_COUNT: (1000, TAG_COUNTER32),
-                OID_MARKER_COUNTER_UNIT: (17, TAG_INTEGER),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_MARKER_LIFE_COUNT: (1000, TAG_COUNTER32),
+                OID_MARKER_COUNTER_UNIT: (17, TAG_INTEGER),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertIsNone(result['labels_total'])

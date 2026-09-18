@@ -61,13 +61,13 @@ class SatoAdapter(PrinterAdapter):
         }
 
         # Reachability check: try multiple OIDs (Sato is flaky)
-        model_name, _ = self._snmp_get(OID_PRINTER_NAME)
+        model_name, _ = self._snmp_get(OID_PRINTER_NAME, label='model')
         if model_name is None:
             # Fallback: try serial
-            serial_check, _ = self._snmp_get(OID_SERIAL)
+            serial_check, _ = self._snmp_get(OID_SERIAL, label='serial_check')
             if serial_check is None:
                 # Fallback: try life count
-                life_check, _ = self._snmp_get(OID_MARKER_LIFE_COUNT)
+                life_check, _ = self._snmp_get(OID_MARKER_LIFE_COUNT, label='life_check')
                 if life_check is None:
                     return result
             else:
@@ -81,24 +81,34 @@ class SatoAdapter(PrinterAdapter):
 
         result['reachable'] = True
 
-        # Get serial if not already fetched
-        if not result['serial']:
-            serial, _ = self._snmp_get(OID_SERIAL)
-            if isinstance(serial, bytes):
-                serial = serial.decode('ascii', errors='replace')
-            result['serial'] = serial or ''
+        # Batch fetch: serial, status, meters, unit — single request
+        batch_oids = [
+            OID_SERIAL,
+            OID_HR_STATUS,
+            OID_MARKER_LIFE_COUNT,
+            OID_MARKER_COUNTER_UNIT,
+        ]
+        batch_results = self._snmp_get_multiple(batch_oids, label='batch')
 
-        # Get status
-        status_code, _ = self._snmp_get(OID_HR_STATUS)
+        oid_map = {oid: (val, tag) for oid, val, tag in batch_results}
+
+        # Serial
+        serial, _ = oid_map.get(OID_SERIAL, (None, None))
+        if isinstance(serial, bytes):
+            serial = serial.decode('ascii', errors='replace')
+        result['serial'] = serial or ''
+
+        # Status
+        status_code, _ = oid_map.get(OID_HR_STATUS, (None, None))
         result['status'] = self._status_from_code(status_code)
 
-        # Get meters total (prtMarkerLifeCount)
-        meters, _ = self._snmp_get(OID_MARKER_LIFE_COUNT)
+        # Meters total (prtMarkerLifeCount)
+        meters, _ = oid_map.get(OID_MARKER_LIFE_COUNT, (None, None))
         if meters is not None:
             result['meters_total'] = float(meters)
 
-        # Get unit code and map it
-        unit_code, _ = self._snmp_get(OID_MARKER_COUNTER_UNIT)
+        # Unit code
+        unit_code, _ = oid_map.get(OID_MARKER_COUNTER_UNIT, (None, None))
         if unit_code is not None:
             code_str = str(int(unit_code))
             result['meter_unit'] = self.unit_map.get(code_str, f'unit_code:{code_str}')

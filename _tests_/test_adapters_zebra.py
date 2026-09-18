@@ -26,6 +26,7 @@ from adapters.zebra import (
     OID_ZEBRA_SERIAL,
     OID_ZEBRA_LABELS_NONRESET,
     OID_ZEBRA_LABELS_RESET1,
+    OID_ZEBRA_CM_NONRESET,
     OID_HR_MODEL,
     OID_HR_STATUS,
     UNIT_MAP,
@@ -102,26 +103,34 @@ class TestZebraGetCounters(unittest.TestCase):
     def _make_adapter(self):
         return ZebraAdapter('10.0.0.1', community='public', timeout_sec=3, retries=0)
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_successful_query(self, mock_get):
+    def test_successful_query(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_ZEBRA_MODEL_NAME: (b'ZTC ZT230-200dpi ZPL', TAG_OCTET_STRING),
-                OID_ZEBRA_SERIAL: (b'ABC123', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
-                OID_ZEBRA_LABELS_NONRESET: (5000, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_ZEBRA_SERIAL: (b'ABC123', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (5000, TAG_COUNTER32),
+                OID_ZEBRA_CM_NONRESET: (1000, TAG_COUNTER32),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 5000)
-        self.assertIsNone(result['meters_total'])
-        self.assertEqual(result['meter_unit'], 'unknown')
+        self.assertEqual(result['meters_total'], 1000.0)
+        self.assertEqual(result['meter_unit'], 'cm')
         self.assertEqual(result['model_name'], 'ZTC ZT230-200dpi ZPL')
         self.assertEqual(result['serial'], 'ABC123')
         self.assertEqual(result['status'], 'idle')
@@ -136,65 +145,90 @@ class TestZebraGetCounters(unittest.TestCase):
         self.assertIsNone(result['labels_total'])
         self.assertIsNone(result['meters_total'])
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_labels_fallback_to_reset_counter(self, mock_get):
+    def test_labels_fallback_to_reset_counter(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
-                OID_ZEBRA_SERIAL: (b'SN123', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
-                OID_ZEBRA_LABELS_NONRESET: (None, None),
                 OID_ZEBRA_LABELS_RESET1: (9999, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_ZEBRA_SERIAL: (b'SN123', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (None, None),
+                OID_ZEBRA_CM_NONRESET: (None, None),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 9999)
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_meters_not_available(self, mock_get):
+    def test_meters_not_available(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
-                OID_ZEBRA_SERIAL: (b'SN123', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
-                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_ZEBRA_SERIAL: (b'SN123', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
+                OID_ZEBRA_CM_NONRESET: (None, None),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertIsNone(result['meters_total'])
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_meters_always_unknown(self, mock_get):
+    def test_meters_always_unknown(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
-                OID_ZEBRA_SERIAL: (b'SN', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
-                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_ZEBRA_SERIAL: (b'SN', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
+                OID_ZEBRA_CM_NONRESET: (None, None),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertIsNone(result['meters_total'])
         self.assertEqual(result['meter_unit'], 'unknown')
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_status_codes(self, mock_get):
+    def test_status_codes(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
         status_codes = {
@@ -208,30 +242,49 @@ class TestZebraGetCounters(unittest.TestCase):
         }
 
         for code, expected_status in status_codes.items():
-            mock_get.side_effect = lambda oid, c=code: {
-                OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
-                OID_ZEBRA_SERIAL: (b'SN', TAG_OCTET_STRING),
-                OID_HR_STATUS: (c, TAG_INTEGER),
-                OID_ZEBRA_LABELS_NONRESET: (0, TAG_COUNTER32),
-            }.get(oid, (None, None))
+            def side_effect(oid, label=None, c=code):
+                responses = {
+                    OID_ZEBRA_MODEL_NAME: (b'Zebra', TAG_OCTET_STRING),
+                }
+                return responses.get(oid, (None, None))
+
+            def multi_side_effect(oids, label=None, c=code):
+                responses = {
+                    OID_ZEBRA_SERIAL: (b'SN', TAG_OCTET_STRING),
+                    OID_HR_STATUS: (c, TAG_INTEGER),
+                    OID_ZEBRA_LABELS_NONRESET: (0, TAG_COUNTER32),
+                    OID_ZEBRA_CM_NONRESET: (None, None),
+                }
+                return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
+            mock_get.side_effect = side_effect
+            mock_get_multi.side_effect = multi_side_effect
 
             result = adapter.get_counters()
             self.assertEqual(result['status'], expected_status, f'Status code {code}')
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_model_name_bytes_decoded(self, mock_get):
+    def test_model_name_bytes_decoded(self, mock_get, mock_get_multi):
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 OID_ZEBRA_MODEL_NAME: (b'ZTC ZD621-203dpi ZPL', TAG_OCTET_STRING),
-                OID_ZEBRA_SERIAL: (b'XYZ789', TAG_OCTET_STRING),
-                OID_HR_STATUS: (3, TAG_INTEGER),
-                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                OID_ZEBRA_SERIAL: (b'XYZ789', TAG_OCTET_STRING),
+                OID_HR_STATUS: (3, TAG_INTEGER),
+                OID_ZEBRA_LABELS_NONRESET: (100, TAG_COUNTER32),
+                OID_ZEBRA_CM_NONRESET: (None, None),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertEqual(result['model_name'], 'ZTC ZD621-203dpi ZPL')

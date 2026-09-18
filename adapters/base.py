@@ -3,6 +3,7 @@
 All printer adapters must implement this interface.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -48,10 +49,12 @@ class PrinterAdapter(ABC):
         """Check if the printer is reachable via SNMP."""
         ...
 
-    def _snmp_get(self, oid):
+    def _snmp_get(self, oid, label=None):
         """Helper: single SNMP GET. Returns (value, type_tag) or (None, None)."""
         from snmp_client import get, SnmpTimeout, SnmpError
+        tag = label or oid
         try:
+            logging.debug(f"  SNMP GET  {self.ip} {oid}  [{tag}]")
             value, type_tag = get(
                 self.ip, oid,
                 community=self.community,
@@ -59,22 +62,54 @@ class PrinterAdapter(ABC):
                 retries=self.retries,
                 version=self.version,
             )
+            logging.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
             return value, type_tag
-        except (SnmpTimeout, SnmpError):
+        except SnmpTimeout as e:
+            logging.debug(f"  SNMP FAIL {self.ip} {oid} TIMEOUT  [{tag}]: {e}")
+            return None, None
+        except SnmpError as e:
+            logging.debug(f"  SNMP FAIL {self.ip} {oid} ERROR  [{tag}]: {e}")
             return None, None
 
-    def _snmp_get_multiple(self, oids):
-        """Helper: multi-OID SNMP GET. Returns list of (oid, value, type_tag)."""
-        from snmp_client import get_multiple, SnmpTimeout, SnmpError
+    def _snmp_get_multiple(self, oids, label=None):
+        """Helper: multi-OID SNMP GET. Falls back to individual GETs on failure."""
+        from snmp_client import get_multiple, get, SnmpTimeout, SnmpError
+        tag = label or f"multi({len(oids)})"
+        oid_list = ', '.join(oids)
+
+        # Try multi-OID GET first
         try:
-            return get_multiple(
+            logging.debug(f"  SNMP GET  {self.ip} [{tag}] oids: {oid_list}")
+            results = get_multiple(
                 self.ip, oids,
                 community=self.community,
                 timeout_sec=self.timeout_sec,
                 retries=self.retries,
             )
-        except (SnmpTimeout, SnmpError):
-            return [(oid, None, None) for oid in oids]
+            for oid, value, type_tag in results:
+                logging.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
+            return results
+        except (SnmpTimeout, SnmpError) as e:
+            logging.debug(f"  SNMP FAIL {self.ip} batch FAILED  [{tag}]: {e}")
+            logging.debug(f"  SNMP FALLBACK {self.ip} individual GETs  [{tag}]")
+
+        # Fallback: individual GETs
+        results = []
+        for oid in oids:
+            try:
+                value, type_tag = get(
+                    self.ip, oid,
+                    community=self.community,
+                    timeout_sec=self.timeout_sec,
+                    retries=self.retries,
+                    version=self.version,
+                )
+                logging.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
+                results.append((oid, value, type_tag))
+            except (SnmpTimeout, SnmpError) as e:
+                logging.debug(f"  SNMP FAIL {self.ip} {oid}  [{tag}]: {e}")
+                results.append((oid, None, None))
+        return results
 
     @staticmethod
     def _status_from_code(code):

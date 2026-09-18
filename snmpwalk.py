@@ -17,10 +17,30 @@ from snmp_client import get, SnmpTimeout, SnmpError, VERSION_1, VERSION_2C
 def snmp_getnext(ip, oid, community='public', timeout_sec=5, retries=2, version=VERSION_2C):
     """SNMP GETNEXT for a single OID."""
     from snmp_client import _build_request, _generate_request_id, _parse_response
+    from snmp_client import (
+        TAG_GETNEXT_REQUEST, TAG_SEQUENCE,
+        _encode_integer, _encode_octet_string, _encode_length,
+        _encode_oid, _encode_null, _encode_sequence,
+    )
     import socket
 
     request_id = _generate_request_id()
-    packet = _build_request(oid, request_id, community, version=version)
+    # Build a GETNEXT packet (TAG 0xA1) instead of GET (TAG 0xA0)
+    oid_encoded = _encode_oid(oid)
+    varbind = _encode_sequence([oid_encoded, _encode_null()])
+    varbind_list = _encode_sequence([varbind])
+    pdu_content = (
+        _encode_integer(request_id)
+        + _encode_integer(0)  # error-status
+        + _encode_integer(0)  # error-index
+        + varbind_list
+    )
+    pdu = bytes([TAG_GETNEXT_REQUEST]) + _encode_length(len(pdu_content)) + pdu_content
+    packet = _encode_sequence([
+        _encode_integer(version),
+        _encode_octet_string(community),
+        pdu,
+    ])
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(timeout_sec)

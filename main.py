@@ -45,11 +45,12 @@ def load_config(config_path='config.json'):
         sys.exit(2)
 
 
-def setup_logging(log_dir='logs'):
+def setup_logging(log_dir='logs', verbose=False):
     """Configure logging to file and console.
 
     Args:
         log_dir: Directory for log files.
+        verbose: If True, set console to DEBUG level.
     """
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -57,13 +58,20 @@ def setup_logging(log_dir='logs'):
     now = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = os.path.join(log_dir, f'run_{now}.log')
 
+    level = logging.DEBUG if verbose else logging.INFO
+
+    # File handler always gets DEBUG
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+
+    # Console handler respects verbose flag
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(level)
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='%(asctime)s [%(levelname)s] %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler(sys.stdout),
-        ]
+        handlers=[file_handler, console_handler],
     )
     return log_file
 
@@ -322,10 +330,12 @@ def main():
     parser.add_argument('--report', action='store_true', help='Generate CSV report')
     parser.add_argument('--from', dest='from_date', help='Report start date (YYYY-MM-DD)')
     parser.add_argument('--to', dest='to_date', help='Report end date (YYYY-MM-DD)')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Show detailed SNMP request/response logs')
     args = parser.parse_args()
 
     config = load_config(args.config)
-    log_file = setup_logging(config.get('log_dir', 'logs'))
+    log_file = setup_logging(config.get('log_dir', 'logs'), verbose=args.verbose)
     logging.info(f"Log file: {log_file}")
 
     if args.report:

@@ -395,45 +395,61 @@ class TestRealisticPrinterResponses(unittest.TestCase):
     def _make_adapter(self, ip='192.168.40.249'):
         return ZebraAdapter(ip, community='public', timeout_sec=3, retries=0)
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_zt230_full_response(self, mock_get):
+    def test_zt230_full_response(self, mock_get, mock_get_multi):
         """ZT230 with all vendor OIDs available."""
         adapter = self._make_adapter('192.168.40.249')
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 '1.3.6.1.4.1.10642.1.1.0': (b'ZTC ZT230-200dpi ZPL', TAG_OCTET_STRING),
-                '1.3.6.1.4.1.10642.1.9.0': (b'55J12345', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),  # idle
-                '1.3.6.1.4.1.10642.3.1.6.0': (15234, TAG_COUNTER32),  # labels
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                '1.3.6.1.4.1.10642.1.9.0': (b'55J12345', TAG_OCTET_STRING),
+                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),
+                '1.3.6.1.4.1.10642.3.1.6.0': (15234, TAG_COUNTER32),
+                '1.3.6.1.4.1.10642.3.1.1.0': (50000, TAG_COUNTER32),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 15234)
-        self.assertIsNone(result['meters_total'])
+        self.assertEqual(result['meters_total'], 50000.0)
         self.assertEqual(result['model_name'], 'ZTC ZT230-200dpi ZPL')
         self.assertEqual(result['serial'], '55J12345')
         self.assertEqual(result['status'], 'idle')
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_gx430t_with_fallback(self, mock_get):
+    def test_gx430t_with_fallback(self, mock_get, mock_get_multi):
         """GX430t with vendor labels OID but no meters OID."""
         adapter = self._make_adapter('192.168.40.176')
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 '1.3.6.1.4.1.10642.1.1.0': (b'ZTC GX430t-203dpi ZPL', TAG_OCTET_STRING),
-                '1.3.6.1.4.1.10642.1.9.0': (b'66K78901', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (4, TAG_INTEGER),  # printing
-                '1.3.6.1.4.1.10642.3.1.6.0': (8901, TAG_COUNTER32),  # labels
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                '1.3.6.1.4.1.10642.1.9.0': (b'66K78901', TAG_OCTET_STRING),
+                '1.3.6.1.2.1.25.3.5.1.1.1': (4, TAG_INTEGER),
+                '1.3.6.1.4.1.10642.3.1.6.0': (8901, TAG_COUNTER32),
+                '1.3.6.1.4.1.10642.3.1.1.0': (None, None),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
@@ -441,47 +457,54 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertIsNone(result['meters_total'])
         self.assertEqual(result['status'], 'printing')
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_zd621_with_link_os(self, mock_get):
+    def test_zd621_with_link_os(self, mock_get, mock_get_multi):
         """ZD621 with full Link-OS MIB."""
         adapter = self._make_adapter('192.168.40.144')
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
                 '1.3.6.1.4.1.10642.1.1.0': (b'ZTC ZD621-203dpi ZPL', TAG_OCTET_STRING),
-                '1.3.6.1.4.1.10642.1.9.0': (b'77L45678', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),  # idle
-                '1.3.6.1.4.1.10642.3.1.6.0': (45678, TAG_COUNTER32),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            responses = {
+                '1.3.6.1.4.1.10642.1.9.0': (b'77L45678', TAG_OCTET_STRING),
+                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),
+                '1.3.6.1.4.1.10642.3.1.6.0': (45678, TAG_COUNTER32),
+                '1.3.6.1.4.1.10642.3.1.1.0': (100000, TAG_COUNTER32),
+            }
+            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 45678)
-        self.assertIsNone(result['meters_total'])
+        self.assertEqual(result['meters_total'], 100000.0)
         self.assertEqual(result['model_name'], 'ZTC ZD621-203dpi ZPL')
         self.assertEqual(result['serial'], '77L45678')
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_printer_with_garbage_model_name(self, mock_get):
+    def test_printer_with_garbage_model_name(self, mock_get, mock_get_multi):
         """Printer returns non-standard model name."""
         adapter = self._make_adapter()
 
-        def side_effect(oid):
+        def side_effect(oid, label=None):
             responses = {
-                '1.3.6.1.2.1.1.1.0': (b'Zebra', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),
                 '1.3.6.1.4.1.10642.1.1.0': (b'UNKNOWN\x00\x01\x02', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.43.5.1.1.17.1': (b'SN123', TAG_OCTET_STRING),
-                '1.3.6.1.4.1.10642.20.17.2.0': (100, TAG_COUNTER32),
-                '1.3.6.1.4.1.10642.20.17.3.0': (50.0, TAG_COUNTER32),
-                '1.3.6.1.2.1.43.10.2.1.3.1': (None, None),
             }
             return responses.get(oid, (None, None))
 
+        def multi_side_effect(oids, label=None):
+            return [(oid, None, None) for oid in oids]
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         # Should handle garbage bytes gracefully
@@ -502,21 +525,30 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         self.assertEqual(result['model_name'], '')
         self.assertEqual(result['serial'], '')
 
+    @patch.object(ZebraAdapter, '_snmp_get_multiple')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_partial_oid_response(self, mock_get):
+    def test_partial_oid_response(self, mock_get, mock_get_multi):
         """Some OIDs respond, others timeout."""
         adapter = self._make_adapter()
 
-        def side_effect(oid):
-            # Only model name and status respond
+        def side_effect(oid, label=None):
+            # Only model name responds
             if oid == '1.3.6.1.4.1.10642.1.1.0':
                 return (b'Zebra', TAG_OCTET_STRING)
-            if oid == '1.3.6.1.2.1.25.3.5.1.1.1':
-                return (3, TAG_INTEGER)
-            # Everything else times out
             return (None, None)
 
+        def multi_side_effect(oids, label=None):
+            # Only status responds in batch
+            results = []
+            for oid in oids:
+                if oid == '1.3.6.1.2.1.25.3.5.1.1.1':
+                    results.append((oid, 3, TAG_INTEGER))
+                else:
+                    results.append((oid, None, None))
+            return results
+
         mock_get.side_effect = side_effect
+        mock_get_multi.side_effect = multi_side_effect
         result = adapter.get_counters()
 
         self.assertTrue(result['reachable'])
