@@ -64,9 +64,9 @@ def setup_logging(log_dir='logs', verbose=False):
 
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
 
-    # File handler always gets DEBUG
+    # File handler respects verbose flag too
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
     # Console handler respects verbose flag
