@@ -4,7 +4,7 @@ Tests cover:
 - Poke (reachability via printer name OID)
 - Meter counter retrieval
 - Unit detection via prtMarkerCounterUnit OID
-- Unit map translation
+- Built-in UNIT_MAP translation
 - Unreachable printer
 - Byte-to-string model name decoding
 """
@@ -16,16 +16,18 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter, OID_REACHABILITY, OID_METERS, OID_UNIT
+from adapters.sato_cl4nx_plus import (
+    SatoCL4NXPlusAdapter, OID_REACHABILITY, OID_METERS, OID_UNIT, UNIT_MAP,
+)
 from snmp_client import TAG_INTEGER, TAG_COUNTER32, TAG_OCTET_STRING, TAG_GAUGE32
 
 
 class TestSatoCL4NXPlusAdapter(unittest.TestCase):
     """Tests for SatoCL4NXPlusAdapter."""
 
-    def _make_adapter(self, ip='192.168.40.50', unit_map=None):
+    def _make_adapter(self, ip='192.168.40.50'):
         return SatoCL4NXPlusAdapter(ip, community='public', timeout_sec=3,
-                                     retries=0, unit_map=unit_map)
+                                     retries=0)
 
     def test_default_version_is_v2c(self):
         """Sato defaults to SNMPv2c (version=1)."""
@@ -43,12 +45,16 @@ class TestSatoCL4NXPlusAdapter(unittest.TestCase):
         self.assertIn('model_name', SatoCL4NXPlusAdapter.OIDS)
         self.assertIn('meters_total', SatoCL4NXPlusAdapter.OIDS)
 
+    def test_unit_map_is_populated(self):
+        """UNIT_MAP should contain known Sato unit codes."""
+        self.assertIn('5', UNIT_MAP)
+        self.assertEqual(UNIT_MAP['5'], 'linearMeters')
+
     @patch.object(SatoCL4NXPlusAdapter, '_snmp_get_retry')
     @patch.object(SatoCL4NXPlusAdapter, '_snmp_get')
-    def test_full_response_with_unit_map(self, mock_get, mock_retry):
-        """Sato with meters and unit mapped via unit_map."""
-        unit_map = {'5': 'linearMeters'}
-        adapter = self._make_adapter(unit_map=unit_map)
+    def test_full_response_with_known_unit(self, mock_get, mock_retry):
+        """Sato with meters and a known unit code (5 = linearMeters)."""
+        adapter = self._make_adapter()
         mock_get.return_value = (b'SATO CL4NX Plus', TAG_OCTET_STRING)
         mock_retry.side_effect = [
             (123456, TAG_COUNTER32),   # meters
@@ -125,16 +131,11 @@ class TestSatoCL4NXPlusAdapter(unittest.TestCase):
         adapter = SatoCL4NXPlusAdapter('10.0.0.99', community='private')
         self.assertEqual(adapter.community, 'private')
 
-    def test_default_unit_map(self):
-        """Default unit_map is empty dict."""
-        adapter = self._make_adapter()
-        self.assertEqual(adapter.unit_map, {})
-
     @patch.object(SatoCL4NXPlusAdapter, '_snmp_get_retry')
     @patch.object(SatoCL4NXPlusAdapter, '_snmp_get')
     def test_unit_code_unknown(self, mock_get, mock_retry):
-        """Unit code not in unit_map falls back to unit_code:N format."""
-        adapter = self._make_adapter(unit_map={})
+        """Unit code not in UNIT_MAP falls back to unit_code:N format."""
+        adapter = self._make_adapter()
         mock_get.return_value = (b'SATO', TAG_OCTET_STRING)
         mock_retry.side_effect = [
             (1000, TAG_COUNTER32),   # meters

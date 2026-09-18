@@ -14,6 +14,15 @@ OID_REACHABILITY = '1.3.6.1.2.1.43.5.1.1.16.1'  # printer name
 OID_METERS = '1.3.6.1.2.1.43.10.2.1.4.1.1'     # prtMarkerLifeCount
 OID_UNIT = '1.3.6.1.2.1.43.10.2.1.3.1.1'        # prtMarkerCounterUnit
 
+# prtMarkerCounterUnit values → human-readable strings.
+# These come from the printer firmware, not user config.
+UNIT_MAP = {
+    '3': 'sheets',
+    '4': 'linearFeet',
+    '5': 'linearMeters',
+    '17': 'm',  # Sato custom code observed on CL4NX Plus
+}
+
 
 class SatoCL4NXPlusAdapter(PrinterAdapter):
 
@@ -23,9 +32,8 @@ class SatoCL4NXPlusAdapter(PrinterAdapter):
     }
 
     def __init__(self, ip, community='public', timeout_sec=5, retries=2,
-                 version=1, unit_map=None, **kwargs):
+                 version=1, **kwargs):
         super().__init__(ip, community, timeout_sec, retries, version, **kwargs)
-        self.unit_map = unit_map or {}
 
     def get_counters(self) -> dict:
         result = {
@@ -48,7 +56,7 @@ class SatoCL4NXPlusAdapter(PrinterAdapter):
         unit_code, _ = self._snmp_get_retry(OID_UNIT, label='unit')
         if unit_code is not None:
             code_str = str(int(unit_code))
-            result['meter_unit'] = self.unit_map.get(code_str, f'unit_code:{code_str}')
+            result['meter_unit'] = UNIT_MAP.get(code_str, f'unit_code:{code_str}')
         elif meters is not None:
             result['meter_unit'] = 'unknown'
 

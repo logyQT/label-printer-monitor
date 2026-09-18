@@ -6,10 +6,14 @@ from datetime import datetime, timezone
 random.seed(42)
 
 import os
-if os.path.exists('printer_stats.db'):
-    os.remove('printer_stats.db')
+_here = os.path.dirname(os.path.abspath(__file__))
+_data = os.path.join(os.path.dirname(_here), 'data')
+_db_path = os.path.join(_data, 'printer_stats.db')
 
-conn = db.init_db('printer_stats.db')
+if os.path.exists(_db_path):
+    os.remove(_db_path)
+
+conn = db.init_db(_db_path)
 
 # Build 60 printers
 printers = {}

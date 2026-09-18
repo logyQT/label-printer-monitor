@@ -31,8 +31,11 @@ UNIT_MAP = {
 }
 
 
-def load_config(config_path='config.json'):
+def load_config(config_path=None):
     """Load configuration from JSON file."""
+    if config_path is None:
+        _here = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(os.path.dirname(_here), 'data', 'config.json')
     if not os.path.exists(config_path):
         print(f'ERROR: Config file not found: {config_path}', file=sys.stderr)
         sys.exit(2)
@@ -40,8 +43,11 @@ def load_config(config_path='config.json'):
         return json.load(f)
 
 
-def save_config(config, config_path='config.json'):
+def save_config(config, config_path=None):
     """Save configuration to JSON file."""
+    if config_path is None:
+        _here = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(os.path.dirname(_here), 'data', 'config.json')
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 

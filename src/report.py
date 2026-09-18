@@ -1,27 +1,16 @@
 """Weekly printer statistics report.
 
-Usage:
-    python report.py                          # current week
-    python report.py --from 2026-09-01 --to 2026-09-30
-    python report.py --csv
+Library module — called via ``main.py --report``.
 """
 
-import argparse
 import csv
-import json
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 
 import db
 
-
-def load_config(path='config.json'):
-    if not os.path.exists(path):
-        print(f'ERROR: Config not found: {path}', file=sys.stderr)
-        sys.exit(2)
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
 
 
 def _to_epoch(date_str):
@@ -51,7 +40,12 @@ def _week_dates(label):
 
 def compute_weekly(config, from_date, to_date):
     """Returns {week_label: [{ip, model, labels, meters}, ...]}"""
-    conn = db.init_db(config['db_path'])
+    filename = config.get('db', {}).get('filename', 'printer_stats.db')
+    if filename == ':memory:':
+        db_path = filename
+    else:
+        db_path = os.path.join(_ROOT, 'data', filename)
+    conn = db.init_db(db_path)
     from_ep = _to_epoch(from_date)
     to_ep = _to_epoch(to_date) + 86399
 
@@ -186,28 +180,3 @@ def export_csv(weeks, config, path):
                 ])
     print(f"CSV saved to: {path}")
 
-
-def main():
-    parser = argparse.ArgumentParser(description='Weekly printer statistics')
-    parser.add_argument('--config', default='config.json')
-    parser.add_argument('--from', dest='from_date', help='Start date (YYYY-MM-DD)')
-    parser.add_argument('--to', dest='to_date', help='End date (YYYY-MM-DD)')
-    parser.add_argument('--csv', action='store_true', help='Export CSV')
-    args = parser.parse_args()
-
-    config = load_config(args.config)
-    from_date = args.from_date or datetime.now().strftime('%Y-%m-%d')
-    to_date = args.to_date or datetime.now().strftime('%Y-%m-%d')
-
-    weeks = compute_weekly(config, from_date, to_date)
-
-    if args.csv:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            f'report_{from_date}_to_{to_date}.csv')
-        export_csv(weeks, config, path)
-    else:
-        print_report(weeks, config)
-
-
-if __name__ == '__main__':
-    main()

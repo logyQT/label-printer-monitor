@@ -5,7 +5,7 @@ Collects print counters from Zebra and Sato label printers via SNMP, stores them
 ## Dependencies
 
 ```
-pysnmp
+pysnmp==7.1.29
 ```
 
 ## Setup
@@ -14,13 +14,19 @@ pysnmp
 pip install -r requirements.txt
 ```
 
-Edit `config.json` with your printers:
+Edit `config/config.json` with your printers:
 
 ```json
 {
-  "db_path": "printer_stats.db",
-  "snmp": { "community": "public", "timeout_sec": 3, "retries": 2 },
-  "sato_unit_map": { "17": "m" },
+  "db": {
+    "filename": "printer_stats.db"
+  },
+  "log_dir": "logs",
+  "snmp": {
+    "community": "public",
+    "timeout_sec": 3,
+    "retries": 2
+  },
   "printers": [
     { "ip": "10.0.1.10", "model": "Sato CL4NX Plus", "location": "Linia 1" },
     { "ip": "10.0.1.11", "model": "Zebra ZT411", "location": "Linia 2" },
@@ -31,25 +37,27 @@ Edit `config.json` with your printers:
 
 ## Usage
 
+`main.py` is the single entry point. Run with no flags to see help.
+
 ### Collect data
 
 ```bash
-python main.py                # collect from all printers
-python main.py --verbose      # with SNMP debug output
+python main.py --collect            # collect from all printers
+python main.py --collect --verbose  # with SNMP debug output
 ```
 
 ### Generate report
 
 ```bash
-python report.py --from 2026-09-01 --to 2026-09-30          # weekly report
-python report.py --from 2026-09-01 --to 2026-09-30 --csv    # export CSV
+python main.py --report                                    # current week
+python main.py --report --from 2026-09-01 --to 2026-09-30  # date range
+python main.py --report --csv                              # export CSV
 ```
 
-### SNMP tools
+### Run tests
 
 ```bash
-python snmpget.py 10.0.1.11 1.3.6.1.4.1.10642.1.1.0
-python snmpwalk.py 10.0.1.11 1.3.6.1.4.1.10642 --max 50
+python main.py --test
 ```
 
 ## Automated collection
@@ -63,14 +71,14 @@ crontab -e
 ```
 
 ```
-0 5 * * 1-5  cd /path/to/statystki-drukarki && python main.py
-0 15 * * 1-5 cd /path/to/statystki-drukarki && python main.py
+0 5 * * 1-5  cd /path/to/statystki-drukarki && python main.py --collect
+0 15 * * 1-5 cd /path/to/statystki-drukarki && python main.py --collect
 ```
 
 ### Windows (Task Scheduler)
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "python" -Argument "main.py" -WorkingDirectory "C:\path\to\statystki-drukarki"
+$action = New-ScheduledTaskAction -Execute "python" -Argument "main.py --collect" -WorkingDirectory "C:\path\to\statystki-drukarki"
 $trigger1 = New-ScheduledTaskTrigger -Daily -At "05:00"
 $trigger2 = New-ScheduledTaskTrigger -Daily -At "15:00"
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
@@ -108,16 +116,29 @@ Single `snapshots` table:
 ## Project structure
 
 ```
-main.py               # collection orchestrator
-report.py             # weekly report generator
-db.py                 # SQLite storage
-adapters/
-  base.py             # abstract adapter with SNMP helpers
-  zebra_zt411.py      # Zebra ZT411 (labels + meters)
-  zebra_gx430t.py     # Zebra GX430t (meters only)
-  sato_cl4nx_plus.py  # Sato CL4NX Plus (meters only)
-snmp_client.py        # pysnmp wrapper
-snmpget.py            # single OID query tool
-snmpwalk.py           # OID subtree walker
-config.json           # printer list + SNMP settings
+main.py                 # single entry point (--collect / --report / --test)
+requirements.txt        # pinned dependencies
+config/
+  config.json           # printer list + SNMP settings (gitignored)
+  config.json.schema    # JSON Schema for config validation
+data/
+  printer_stats.db      # SQLite database (gitignored)
+  backups/              # auto-backup before each run (gitignored)
+logs/                   # per-run log files (gitignored)
+src/
+  adapters/
+    __init__.py         # adapter registry
+    base.py             # abstract adapter with SNMP helpers
+    zebra_zt411.py      # Zebra ZT411 (labels + meters)
+    zebra_gx430t.py     # Zebra GX430t (meters only)
+    sato_cl4nx_plus.py  # Sato CL4NX Plus (meters only, built-in unit map)
+  _tests_/              # unit tests
+  db.py                 # SQLite storage layer
+  report.py             # weekly report generator (library)
+  snmp_client.py        # pysnmp wrapper
+  discover_units.py     # one-time meter unit detection tool
+  seed_fake_data.py     # test data seeder
+  snmpget.py            # single OID query tool
+  snmpwalk.py           # OID subtree walker
+  run_tests.py          # test runner (standalone)
 ```

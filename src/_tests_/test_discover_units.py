@@ -20,12 +20,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import discover_units
 from snmp_client import SnmpTimeout, SnmpError
 
+_DATA_CONFIG = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    'config', 'config.json',
+)
+
 
 class TestLoadConfig(unittest.TestCase):
     """Tests for load_config()."""
 
     def test_load_valid_config(self):
-        config = discover_units.load_config('config.json')
+        config = discover_units.load_config(_DATA_CONFIG)
         self.assertIn('printers', config)
 
     def test_missing_config_exits(self):

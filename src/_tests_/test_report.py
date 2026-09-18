@@ -1,7 +1,6 @@
 """Tests for report.py - shift-based printer statistics.
 
 Tests cover:
-- Config loading
 - Epoch / shift helper functions
 - Unit conversion
 - compute_weekly (with mocked DB)
@@ -30,7 +29,7 @@ import report
 def _make_config():
     """Return a minimal config dict for tests."""
     return {
-        'db_path': ':memory:',
+        'db': {'filename': ':memory:'},
         'printers': [
             {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'location': 'Line 1'},
             {'ip': '10.0.0.2', 'model': 'Sato CL4NX Plus', 'location': 'Line 2'},
@@ -53,24 +52,6 @@ def _epoch_for_date(date_str, hour, minute=0):
     """Return epoch int for a date+time (UTC)."""
     dt = datetime.fromisoformat(f'{date_str}T{hour:02d}:{minute:02d}:00+00:00')
     return int(dt.timestamp())
-
-
-# ---------------------------------------------------------------------------
-# Tests for load_config
-# ---------------------------------------------------------------------------
-
-class TestLoadConfig(unittest.TestCase):
-    """Tests for load_config()."""
-
-    def test_load_valid_config(self):
-        config = report.load_config('config.json')
-        self.assertIn('printers', config)
-        self.assertIn('db_path', config)
-
-    def test_missing_config_exits(self):
-        with self.assertRaises(SystemExit) as ctx:
-            report.load_config('nonexistent.json')
-        self.assertEqual(ctx.exception.code, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -347,51 +328,6 @@ class TestExportCsv(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Tests for main() argument parsing
 # ---------------------------------------------------------------------------
-
-class TestMainFunction(unittest.TestCase):
-    """Tests for main() argument parsing."""
-
-    def test_default_args_prints_report(self):
-        with patch('report.load_config') as mock_config:
-            mock_config.return_value = {
-                'db_path': ':memory:',
-                'printers': [],
-                'shifts': [],
-            }
-            with patch('report.compute_weekly', return_value=[]) as mock_compute, \
-                 patch('report.print_report') as mock_print, \
-                 patch('sys.argv', ['report.py']):
-                report.main()
-            mock_compute.assert_called_once()
-            mock_print.assert_called_once()
-
-    def test_csv_flag_exports(self):
-        with patch('report.load_config') as mock_config:
-            mock_config.return_value = {
-                'db_path': ':memory:',
-                'printers': [],
-                'shifts': [],
-            }
-            with patch('report.compute_weekly', return_value=[]) as mock_compute, \
-                 patch('report.export_csv') as mock_export, \
-                 patch('sys.argv', ['report.py', '--csv']):
-                report.main()
-            mock_compute.assert_called_once()
-            mock_export.assert_called_once()
-
-    def test_date_range_passed_through(self):
-        with patch('report.load_config') as mock_config:
-            mock_config.return_value = {
-                'db_path': ':memory:',
-                'printers': [],
-                'shifts': [],
-            }
-            with patch('report.compute_weekly', return_value=[]) as mock_compute, \
-                 patch('report.print_report'), \
-                 patch('sys.argv', ['report.py', '--from', '2026-09-10', '--to', '2026-09-15']):
-                report.main()
-            mock_compute.assert_called_once_with(mock_config.return_value, '2026-09-10', '2026-09-15')
-
 
 if __name__ == '__main__':
     unittest.main()

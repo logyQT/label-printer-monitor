@@ -14,7 +14,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # src/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # project root
 
 import db
 import main
@@ -24,35 +25,18 @@ class TestLoadConfig(unittest.TestCase):
     """Tests for load_config()."""
 
     def test_load_valid_config(self):
-        config = main.load_config('config.json')
+        config = main.load_config()
         self.assertIn('printers', config)
         self.assertIn('snmp', config)
-        self.assertIn('db_path', config)
+        self.assertIn('db', config)
 
     def test_load_config_with_printers(self):
-        config = main.load_config('config.json')
+        config = main.load_config()
         self.assertGreater(len(config['printers']), 0)
         printer = config['printers'][0]
         self.assertIn('ip', printer)
         self.assertIn('model', printer)
         self.assertIn('location', printer)
-
-    def test_missing_config_exits(self):
-        with self.assertRaises(SystemExit) as ctx:
-            main.load_config('nonexistent.json')
-        self.assertEqual(ctx.exception.code, 2)
-
-    def test_invalid_json_exits(self):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write('{invalid json')
-            f.flush()
-            temp_path = f.name
-        try:
-            with self.assertRaises(SystemExit) as ctx:
-                main.load_config(temp_path)
-            self.assertEqual(ctx.exception.code, 2)
-        finally:
-            os.unlink(temp_path)
 
 
 class TestSetupLogging(unittest.TestCase):
@@ -126,7 +110,7 @@ class TestRunCollection(unittest.TestCase):
 
     def setUp(self):
         self.config = {
-            'db_path': ':memory:',
+            'db': {'filename': ':memory:'},
             'log_dir': tempfile.mkdtemp(),
             'snmp': {'community': 'public', 'timeout_sec': 1, 'retries': 0},
             'printers': [

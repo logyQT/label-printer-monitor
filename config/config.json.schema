@@ -3,11 +3,18 @@
   "title": "Printer Statistics Configuration",
   "description": "Configuration for the printer statistics collection system",
   "type": "object",
-  "required": ["db_path", "log_dir", "snmp", "shifts", "printers"],
+  "required": ["db", "log_dir", "snmp", "printers"],
   "properties": {
-    "db_path": {
-      "type": "string",
-      "description": "Path to SQLite database file"
+    "db": {
+      "type": "object",
+      "description": "Database settings",
+      "required": ["filename"],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "description": "SQLite database filename (stored in data/ directory)"
+        }
+      }
     },
     "log_dir": {
       "type": "string",
@@ -37,13 +44,6 @@
           "maximum": 10,
           "default": 2
         }
-      }
-    },
-    "sato_unit_map": {
-      "type": "object",
-      "description": "Map of Sato prtMarkerCounterUnit codes to unit strings",
-      "additionalProperties": {
-        "type": "string"
       }
     },
     "shifts": {
