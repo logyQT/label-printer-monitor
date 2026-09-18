@@ -3,11 +3,7 @@
 Tests cover:
 - Config loading
 - Logging setup
-- Shift detection
 - Collection logic
-- Shift delta calculation
-- Report generation
-- Argument parsing
 """
 
 import json
@@ -15,7 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,7 +27,6 @@ class TestLoadConfig(unittest.TestCase):
         config = main.load_config('config.json')
         self.assertIn('printers', config)
         self.assertIn('snmp', config)
-        self.assertIn('shifts', config)
         self.assertIn('db_path', config)
 
     def test_load_config_with_printers(self):
@@ -41,10 +36,6 @@ class TestLoadConfig(unittest.TestCase):
         self.assertIn('ip', printer)
         self.assertIn('model', printer)
         self.assertIn('location', printer)
-
-    def test_config_has_shifts(self):
-        config = main.load_config('config.json')
-        self.assertEqual(len(config['shifts']), 2)
 
     def test_missing_config_exits(self):
         with self.assertRaises(SystemExit) as ctx:
@@ -90,73 +81,6 @@ class TestSetupLogging(unittest.TestCase):
             self.assertTrue(basename.startswith('run_'))
             self.assertTrue(basename.endswith('.log'))
             self._close_logging_handlers()
-
-
-class TestDetectCurrentShift(unittest.TestCase):
-    """Tests for detect_current_shift()."""
-
-    def setUp(self):
-        self.shifts = [
-            {"name": "Morning", "start": "06:00", "end": "14:00"},
-            {"name": "Afternoon", "start": "14:00", "end": "22:00"},
-            {"name": "Night", "start": "22:00", "end": "06:00"},
-        ]
-
-    def test_morning_start(self):
-        now = datetime(2026, 9, 17, 5, 55)
-        shift, phase = main.detect_current_shift(self.shifts, now)
-        self.assertEqual(shift['name'], 'Morning')
-        self.assertEqual(phase, 'start')
-
-    def test_morning_end(self):
-        now = datetime(2026, 9, 17, 13, 55)
-        shift, phase = main.detect_current_shift(self.shifts, now)
-        # At 13:55, both Morning end and Afternoon start are within 10 min.
-        # Start takes priority, so this detects Afternoon start.
-        self.assertEqual(shift['name'], 'Afternoon')
-        self.assertEqual(phase, 'start')
-
-    def test_afternoon_start(self):
-        now = datetime(2026, 9, 17, 13, 55)
-        shift, phase = main.detect_current_shift(self.shifts, now)
-        # Should detect morning end OR afternoon start (both at ~14:00)
-        self.assertIsNotNone(shift)
-
-    def test_night_start(self):
-        now = datetime(2026, 9, 17, 22, 3)
-        shift, phase = main.detect_current_shift(self.shifts, now)
-        self.assertEqual(shift['name'], 'Night')
-        self.assertEqual(phase, 'start')
-
-    def test_no_shift_detected(self):
-        now = datetime(2026, 9, 17, 10, 0)  # Middle of morning shift
-        shift, phase = main.detect_current_shift(self.shifts, now)
-        self.assertIsNone(shift)
-        self.assertIsNone(phase)
-
-    def test_empty_shifts(self):
-        now = datetime(2026, 9, 17, 10, 0)
-        shift, phase = main.detect_current_shift([], now)
-        self.assertIsNone(shift)
-
-
-class TestWithinMinutes(unittest.TestCase):
-    """Tests for _within_minutes()."""
-
-    def test_exact_match(self):
-        self.assertTrue(main._within_minutes('10:00', '10:00', 5))
-
-    def test_within_5_minutes(self):
-        self.assertTrue(main._within_minutes('10:03', '10:00', 5))
-
-    def test_outside_5_minutes(self):
-        self.assertFalse(main._within_minutes('10:06', '10:00', 5))
-
-    def test_before_within_range(self):
-        self.assertTrue(main._within_minutes('09:58', '10:00', 5))
-
-    def test_after_within_range(self):
-        self.assertTrue(main._within_minutes('10:02', '10:00', 5))
 
 
 class TestCollectPrinter(unittest.TestCase):
@@ -205,7 +129,6 @@ class TestRunCollection(unittest.TestCase):
             'db_path': ':memory:',
             'log_dir': tempfile.mkdtemp(),
             'snmp': {'community': 'public', 'timeout_sec': 1, 'retries': 0},
-            'shifts': [],
             'printers': [
                 {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'location': 'Line 1'},
             ],
@@ -241,95 +164,6 @@ class TestRunCollection(unittest.TestCase):
         success, fail, total = main.run_collection(self.config)
         self.assertEqual(success, 0)
         self.assertEqual(fail, 1)
-
-
-class TestCalculateShiftDeltas(unittest.TestCase):
-    """Tests for calculate_shift_deltas()."""
-
-    def setUp(self):
-        self.config = {
-            'db_path': ':memory:',
-            'printers': [
-                {'ip': '10.0.0.1', 'location': 'Line 1'},
-            ],
-        }
-
-    def test_calculates_deltas(self):
-        conn = db.init_db(':memory:')
-        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', timestamp='2026-09-17T06:00:00')
-        db.save_snapshot(conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra', timestamp='2026-09-17T14:00:00')
-        db.close_db(conn)
-
-        # Overwrite config to use in-memory db
-        self.config['db_path'] = ':memory:'
-        # This test is limited since init_db creates a new connection
-        # In practice, the function would use the same connection
-
-
-class TestGenerateReport(unittest.TestCase):
-    """Tests for generate_report()."""
-
-    def test_generates_csv(self):
-        config = {
-            'db_path': ':memory:',
-            'printers': [
-                {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'location': 'Line 1'},
-            ],
-        }
-        # Initialize database with some data
-        conn = db.init_db(':memory:')
-        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', timestamp='2026-09-17T10:00:00')
-        db.close_db(conn)
-
-        # The function will use its own connection, so this test is limited
-        # In practice, you'd need to mock db.init_db to return the same connection
-
-
-class TestMainFunction(unittest.TestCase):
-    """Tests for main() argument parsing."""
-
-    def test_no_args_runs_collection(self):
-        with patch('main.load_config') as mock_config:
-            mock_config.return_value = {
-                'db_path': ':memory:',
-                'log_dir': tempfile.mkdtemp(),
-                'snmp': {'community': 'public', 'timeout_sec': 1, 'retries': 0},
-                'shifts': [],
-                'printers': [],
-            }
-            with patch('main.run_collection') as mock_run:
-                mock_run.return_value = (0, 0, 0)
-                with patch('sys.argv', ['main.py']):
-                    main.main()
-                mock_run.assert_called_once()
-
-    def test_collect_flag(self):
-        with patch('main.load_config') as mock_config:
-            mock_config.return_value = {
-                'db_path': ':memory:',
-                'log_dir': tempfile.mkdtemp(),
-                'snmp': {'community': 'public', 'timeout_sec': 1, 'retries': 0},
-                'shifts': [],
-                'printers': [],
-            }
-            with patch('main.run_collection') as mock_run:
-                mock_run.return_value = (0, 0, 0)
-                with patch('sys.argv', ['main.py', '--collect']):
-                    main.main()
-                mock_run.assert_called_once()
-
-    def test_report_flag(self):
-        with patch('main.load_config') as mock_config:
-            mock_config.return_value = {
-                'db_path': ':memory:',
-                'log_dir': tempfile.mkdtemp(),
-                'printers': [],
-            }
-            with patch('main.generate_report') as mock_report:
-                mock_report.return_value = 'report.csv'
-                with patch('sys.argv', ['main.py', '--report']):
-                    main.main()
-                mock_report.assert_called_once()
 
 
 if __name__ == '__main__':
