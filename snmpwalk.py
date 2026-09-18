@@ -2,107 +2,31 @@
 
 Usage:
     python snmpwalk.py <ip> <oid>
-    python snmpwalk.py <ip> <oid> --version 1
+    python snmpwalk.py <ip> <oid> --community private
     python snmpwalk.py <ip> <oid> --timeout 10 --max 200
 """
 
 import sys
-import os
+import asyncio
+import argparse
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from snmp_client import get, SnmpTimeout, SnmpError, VERSION_1, VERSION_2C
-
-
-def snmp_getnext(ip, oid, community='public', timeout_sec=5, retries=2, version=VERSION_2C):
-    """SNMP GETNEXT for a single OID."""
-    from snmp_client import _build_request, _generate_request_id, _parse_response
-    from snmp_client import (
-        TAG_GETNEXT_REQUEST, TAG_SEQUENCE,
-        _encode_integer, _encode_octet_string, _encode_length,
-        _encode_oid, _encode_null, _encode_sequence,
-    )
-    import socket
-
-    request_id = _generate_request_id()
-    # Build a GETNEXT packet (TAG 0xA1) instead of GET (TAG 0xA0)
-    oid_encoded = _encode_oid(oid)
-    varbind = _encode_sequence([oid_encoded, _encode_null()])
-    varbind_list = _encode_sequence([varbind])
-    pdu_content = (
-        _encode_integer(request_id)
-        + _encode_integer(0)  # error-status
-        + _encode_integer(0)  # error-index
-        + varbind_list
-    )
-    pdu = bytes([TAG_GETNEXT_REQUEST]) + _encode_length(len(pdu_content)) + pdu_content
-    packet = _encode_sequence([
-        _encode_integer(version),
-        _encode_octet_string(community),
-        pdu,
-    ])
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(timeout_sec)
-    try:
-        last_error = None
-        for attempt in range(retries + 1):
-            try:
-                sock.sendto(packet, (ip, 161))
-                data, addr = sock.recvfrom(65535)
-                varbinds, ver = _parse_response(data)
-                if len(varbinds) == 0:
-                    return None, None, None
-                return varbinds[0]
-            except socket.timeout:
-                last_error = SnmpTimeout(f'Timeout (attempt {attempt + 1}/{retries + 1})')
-                continue
-            except SnmpError:
-                raise
-        raise last_error
-    finally:
-        sock.close()
+from pysnmp.hlapi.v1arch.asyncio import (
+    SnmpDispatcher, CommunityData, UdpTransportTarget,
+    ObjectType, ObjectIdentity,
+    get_cmd, next_cmd,
+)
+from snmp_client import TAG_COUNTER32, TAG_GAUGE32, TAG_INTEGER, TAG_OCTET_STRING, TAG_TIMETICKS, TAG_IP_ADDRESS, TAG_OID
 
 
-def walk(ip, start_oid, community='public', version=VERSION_2C,
-         max_oids=500, timeout_sec=5, retries=2):
-    """Walk an OID subtree."""
-    results = []
-    current_oid = start_oid
-    seen = set()
-
-    for _ in range(max_oids):
-        try:
-            returned_oid, value, type_tag = snmp_getnext(
-                ip, current_oid, community, timeout_sec, retries, version
-            )
-        except (SnmpTimeout, SnmpError):
-            break
-
-        if returned_oid is None:
-            break
-        if returned_oid in seen:
-            break
-        if not returned_oid.startswith(start_oid.rstrip('.') + '.') and returned_oid != start_oid:
-            break
-        if type_tag in (0x80, 0x81, 0x82):
-            break
-
-        seen.add(returned_oid)
-        results.append((returned_oid, value, type_tag))
-        current_oid = returned_oid
-
-    return results
+TAG_NAMES = {
+    TAG_INTEGER: 'INTEGER', TAG_OCTET_STRING: 'OCTET_STRING',
+    TAG_COUNTER32: 'COUNTER32', TAG_GAUGE32: 'GAUGE32',
+    TAG_TIMETICKS: 'TIMETICKS', TAG_IP_ADDRESS: 'IP_ADDRESS',
+}
 
 
 def format_value(value, type_tag):
-    """Format a value for display."""
-    tag_names = {
-        0x02: 'INTEGER', 0x04: 'OCTET_STRING', 0x05: 'NULL',
-        0x06: 'OID', 0x40: 'IP_ADDRESS', 0x41: 'COUNTER32',
-        0x42: 'GAUGE32', 0x43: 'TIMETICKS',
-    }
-    tag_name = tag_names.get(type_tag, f'0x{type_tag:02x}') if type_tag else 'ERROR'
+    tag_name = TAG_NAMES.get(type_tag, f'0x{type_tag:02x}') if type_tag else 'ERROR'
     if isinstance(value, bytes):
         try:
             decoded = value.decode('ascii', errors='replace')
@@ -115,56 +39,76 @@ def format_value(value, type_tag):
         return f'{tag_name}: {value}'
 
 
+def pysnmp_tag(val):
+    type_name = type(val).__name__
+    return {
+        'Integer': TAG_INTEGER, 'Integer32': TAG_INTEGER,
+        'Counter32': TAG_COUNTER32, 'Counter64': TAG_COUNTER32,
+        'Gauge32': TAG_GAUGE32, 'Unsigned32': TAG_GAUGE32,
+        'TimeTicks': TAG_TIMETICKS, 'OctetString': TAG_OCTET_STRING,
+        'ObjectIdentifier': TAG_OID, 'IpAddress': TAG_IP_ADDRESS,
+    }.get(type_name, TAG_OCTET_STRING)
+
+
+async def walk(ip, start_oid, community='public', max_oids=500,
+               timeout_sec=5, retries=2):
+    """Walk an OID subtree using GETNEXT."""
+    dispatcher = SnmpDispatcher()
+    target = await UdpTransportTarget.create((ip, 161), timeout=timeout_sec, retries=retries)
+
+    results = []
+    current_oid = start_oid
+    seen = set()
+
+    for _ in range(max_oids):
+        error_indication, error_status, error_index, var_binds = await get_cmd(
+            dispatcher, CommunityData(community), target,
+            ObjectType(ObjectIdentity(current_oid)),
+        )
+        if error_indication:
+            print(f'  Error: {error_indication}', file=sys.stderr)
+            break
+        if error_status:
+            print(f'  Error: {error_status.prettyPrint()}', file=sys.stderr)
+            break
+
+        for oid_obj, val_obj in var_binds:
+            oid_str = str(oid_obj)
+            if oid_str in seen:
+                return results
+            if not oid_str.startswith(start_oid.rstrip('.') + '.') and oid_str != start_oid:
+                return results
+            seen.add(oid_str)
+            tag = pysnmp_tag(val_obj)
+            if tag in (0x80, 0x81, 0x82):
+                return results
+
+            val = bytes(val_obj) if type(val_obj).__name__ == 'OctetString' else (
+                int(val_obj) if hasattr(val_obj, '__int__') and type(val_obj).__name__ in ('Integer', 'Integer32', 'Counter32', 'Counter64', 'Gauge32', 'Unsigned32', 'TimeTicks') else str(val_obj)
+            )
+            results.append((oid_str, val, tag))
+            current_oid = oid_str
+
+    return results
+
+
 def main():
-    if len(sys.argv) < 3:
-        print('Usage: python snmpwalk.py <ip> <oid> [options]')
-        print()
-        print('Options:')
-        print('  --community <str>  SNMP community (default: public)')
-        print('  --version <1|2>    SNMP version (default: 1)')
-        print('  --timeout <sec>    Timeout per OID (default: 5)')
-        print('  --retries <n>      Retry count (default: 2)')
-        print('  --max <n>          Max OIDs to walk (default: 500)')
-        print()
-        print('Examples:')
-        print('  python snmpwalk.py 192.168.40.249 1.3.6.1.4.1.10642.3.1')
-        print('  python snmpwalk.py 192.168.40.249 1.3.6.1.4.1.10642 --timeout 10 --max 200')
-        print('  python snmpwalk.py 192.168.40.249 1.3.6.1.2.1.43 --version 2')
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='SNMP walk utility')
+    parser.add_argument('ip', help='Target IP address')
+    parser.add_argument('oid', help='Starting OID')
+    parser.add_argument('--community', default='public', help='SNMP community (default: public)')
+    parser.add_argument('--timeout', type=int, default=5, help='Timeout per OID in seconds (default: 5)')
+    parser.add_argument('--retries', type=int, default=2, help='Retry count (default: 2)')
+    parser.add_argument('--max', type=int, default=500, help='Max OIDs to walk (default: 500)')
+    args = parser.parse_args()
 
-    ip = sys.argv[1]
-    oid = sys.argv[2]
-    community = 'public'
-    version = VERSION_1
-    timeout = 5
-    retries = 2
-    max_oids = 500
-
-    i = 3
-    while i < len(sys.argv):
-        if sys.argv[i] == '--community' and i + 1 < len(sys.argv):
-            community = sys.argv[i + 1]
-            i += 2
-        elif sys.argv[i] == '--version' and i + 1 < len(sys.argv):
-            version = VERSION_1 if sys.argv[i + 1] == '1' else VERSION_2C
-            i += 2
-        elif sys.argv[i] == '--timeout' and i + 1 < len(sys.argv):
-            timeout = int(sys.argv[i + 1])
-            i += 2
-        elif sys.argv[i] == '--retries' and i + 1 < len(sys.argv):
-            retries = int(sys.argv[i + 1])
-            i += 2
-        elif sys.argv[i] == '--max' and i + 1 < len(sys.argv):
-            max_oids = int(sys.argv[i + 1])
-            i += 2
-        else:
-            print(f'Unknown option: {sys.argv[i]}')
-            sys.exit(1)
-
-    print(f'Walking {oid} on {ip} (v{"1" if version == VERSION_1 else "2c"}, max={max_oids})...')
+    print(f'Walking {args.oid} on {args.ip} (max={args.max})...')
     print()
 
-    results = walk(ip, oid, community, version, max_oids, timeout, retries)
+    results = asyncio.run(walk(
+        args.ip, args.oid, args.community,
+        args.max, args.timeout, args.retries,
+    ))
 
     for oid_str, value, type_tag in results:
         print(f'{oid_str} = {format_value(value, type_tag)}')
