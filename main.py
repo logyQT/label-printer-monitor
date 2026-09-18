@@ -222,11 +222,14 @@ def run_collection(config, shift_phase=None, shift_name=None):
                 model_name=counters.get('model_name', ''),
             )
             success += 1
+            labels = counters.get('labels_total')
+            meters = counters.get('meters_total')
+            unit = counters.get('meter_unit', '')
+            labels_str = f"{labels:,}" if labels is not None else "n/a"
+            meters_str = f"{meters:,.1f} {unit}" if meters is not None else "n/a"
             log.info(
-                f"OK: {location} ({ip}) - "
-                f"labels={counters.get('labels_total')}, "
-                f"meters={counters.get('meters_total')} "
-                f"{counters.get('meter_unit', '')}"
+                f"{model} ({ip}) [{location}] - "
+                f"labels: {labels_str}, odometer: {meters_str}"
             )
 
         except ValueError as e:
