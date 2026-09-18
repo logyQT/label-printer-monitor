@@ -241,8 +241,8 @@ def calculate_shift_deltas(config, shift_name, shift_start, shift_end):
     Args:
         config: Configuration dict.
         shift_name: Shift name.
-        shift_start: Start timestamp (ISO 8601).
-        shift_end: End timestamp (ISO 8601).
+        shift_start: Start timestamp (Unix epoch int).
+        shift_end: End timestamp (Unix epoch int).
     """
     db_path = config['db_path']
     conn = db.init_db(db_path)
@@ -382,8 +382,8 @@ def main():
                     )
                     calculate_shift_deltas(
                         config, shift['name'],
-                        start_time.isoformat(),
-                        now.isoformat()
+                        int(start_time.timestamp()),
+                        int(now.timestamp()),
                     )
                     return
             log.info("No matching shift end detected, collecting anyway")

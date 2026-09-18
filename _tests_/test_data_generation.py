@@ -465,25 +465,25 @@ class TestTimestampHandling(unittest.TestCase):
         """Rounding down to nearest 5 minutes."""
         dt = datetime(2026, 9, 17, 10, 7, 0)
         result = db._round_timestamp(dt, interval_minutes=5)
-        self.assertEqual(result, '2026-09-17T10:05:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 5, 0).timestamp()))
 
     def test_5_minute_rounding_up(self):
         """Rounding up to nearest 5 minutes."""
         dt = datetime(2026, 9, 17, 10, 3, 0)
         result = db._round_timestamp(dt, interval_minutes=5)
-        self.assertEqual(result, '2026-09-17T10:00:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 0, 0).timestamp()))
 
     def test_5_minute_rounding_exact(self):
         """Already on a 5-minute boundary."""
         dt = datetime(2026, 9, 17, 10, 10, 0)
         result = db._round_timestamp(dt, interval_minutes=5)
-        self.assertEqual(result, '2026-09-17T10:10:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 10, 0).timestamp()))
 
     def test_10_minute_rounding(self):
         """Rounding to 10-minute intervals."""
         dt = datetime(2026, 9, 17, 10, 13, 0)
         result = db._round_timestamp(dt, interval_minutes=10)
-        self.assertEqual(result, '2026-09-17T10:10:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 10, 0).timestamp()))
 
     def test_overnight_shift_spanning_midnight(self):
         """Shift from 22:00 to 06:00 spans midnight."""

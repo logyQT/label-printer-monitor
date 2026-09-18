@@ -279,15 +279,19 @@ class TestGetHistory(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
     def test_date_filter(self):
-        db.save_snapshot(self.conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', timestamp='2026-09-16T10:00:00')
-        db.save_snapshot(self.conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra', timestamp='2026-09-17T10:00:00')
+        db.save_snapshot(self.conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra',
+                         timestamp=int(datetime(2026, 9, 16, 10, 0, 0).timestamp()))
+        db.save_snapshot(self.conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra',
+                         timestamp=int(datetime(2026, 9, 17, 10, 0, 0).timestamp()))
         result = db.get_history(self.conn, '10.0.0.1', start_date='2026-09-17')
         self.assertEqual(len(result), 1)
 
     def test_end_date_filter(self):
-        db.save_snapshot(self.conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', timestamp='2026-09-16T10:00:00')
-        db.save_snapshot(self.conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra', timestamp='2026-09-17T10:00:00')
-        result = db.get_history(self.conn, '10.0.0.1', end_date='2026-09-16T23:59:59')
+        db.save_snapshot(self.conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra',
+                         timestamp=int(datetime(2026, 9, 16, 10, 0, 0).timestamp()))
+        db.save_snapshot(self.conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra',
+                         timestamp=int(datetime(2026, 9, 17, 10, 0, 0).timestamp()))
+        result = db.get_history(self.conn, '10.0.0.1', end_date='2026-09-16')
         self.assertEqual(len(result), 1)
 
     def test_empty_history(self):
@@ -308,22 +312,22 @@ class TestRoundTimestamp(unittest.TestCase):
     def test_rounds_down(self):
         dt = datetime(2026, 9, 17, 10, 7, 30)
         result = db._round_timestamp(dt)
-        self.assertEqual(result, '2026-09-17T10:05:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 5, 0).timestamp()))
 
     def test_rounds_exact(self):
         dt = datetime(2026, 9, 17, 10, 5, 0)
         result = db._round_timestamp(dt)
-        self.assertEqual(result, '2026-09-17T10:05:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 5, 0).timestamp()))
 
     def test_rounds_up(self):
         dt = datetime(2026, 9, 17, 10, 3, 0)
         result = db._round_timestamp(dt)
-        self.assertEqual(result, '2026-09-17T10:00:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 0, 0).timestamp()))
 
     def test_rounds_to_10_minutes(self):
         dt = datetime(2026, 9, 17, 10, 12, 0)
         result = db._round_timestamp(dt, interval_minutes=10)
-        self.assertEqual(result, '2026-09-17T10:10:00')
+        self.assertEqual(result, int(datetime(2026, 9, 17, 10, 10, 0).timestamp()))
 
 
 class TestRowToDict(unittest.TestCase):

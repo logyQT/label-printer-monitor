@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 DB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
     printer_ip    TEXT NOT NULL,
-    timestamp     TEXT NOT NULL,
+    timestamp     INTEGER NOT NULL,
     labels_total  INTEGER,
     meters_total  REAL,
     meter_unit    TEXT,
@@ -60,7 +60,7 @@ def save_snapshot(conn, printer_ip, labels_total, meters_total, meter_unit,
         meters_total: Total meters/length printed.
         meter_unit: Unit for meters (e.g. 'cm', 'mm').
         model_name: Printer model string.
-        timestamp: ISO 8601 timestamp. If None, uses current time rounded to 5min.
+        timestamp: Unix epoch (int) or datetime. If None, uses current time rounded to 5min.
 
     Returns:
         True if inserted, False if duplicate (ignored).
@@ -117,7 +117,7 @@ def get_snapshot_at(conn, printer_ip, timestamp):
     Args:
         conn: SQLite connection.
         printer_ip: Printer IP.
-        timestamp: Target timestamp string (ISO 8601).
+        timestamp: Target timestamp (Unix epoch int or 'YYYY-MM-DD' string).
 
     Returns:
         Dict with snapshot data or None.
@@ -228,8 +228,8 @@ def get_history(conn, printer_ip, start_date=None, end_date=None):
     Args:
         conn: SQLite connection.
         printer_ip: Printer IP.
-        start_date: Start date string (ISO 8601).
-        end_date: End date string (ISO 8601).
+        start_date: Start date as epoch int or 'YYYY-MM-DD' string.
+        end_date: End date as epoch int or 'YYYY-MM-DD' string.
 
     Returns:
         List of snapshot dicts.
@@ -237,30 +237,48 @@ def get_history(conn, printer_ip, start_date=None, end_date=None):
     query = "SELECT * FROM snapshots WHERE printer_ip = ?"
     params = [printer_ip]
     if start_date:
+        params.append(_to_epoch(start_date))
         query += " AND timestamp >= ?"
-        params.append(start_date)
     if end_date:
+        # end of day: add 86399 seconds
+        params.append(_to_epoch(end_date) + 86399)
         query += " AND timestamp <= ?"
-        params.append(end_date)
     query += " ORDER BY timestamp ASC"
 
     cursor = conn.execute(query, params)
     return [_row_to_dict(row) for row in cursor.fetchall()]
 
 
+def _to_epoch(date_val):
+    """Convert a value to Unix epoch int.
+
+    Args:
+        date_val: int (already epoch), 'YYYY-MM-DD' string, or datetime.
+
+    Returns:
+        Unix epoch as int.
+    """
+    if isinstance(date_val, int):
+        return date_val
+    if isinstance(date_val, datetime):
+        return int(date_val.timestamp())
+    # 'YYYY-MM-DD' string
+    return int(datetime.fromisoformat(date_val).timestamp())
+
+
 def _round_timestamp(dt, interval_minutes=5):
-    """Round a datetime to the nearest interval.
+    """Round a datetime to the nearest interval and return Unix epoch (int).
 
     Args:
         dt: datetime object.
         interval_minutes: Rounding interval in minutes.
 
     Returns:
-        ISO 8601 string.
+        Unix epoch as int (seconds since 1970-01-01 UTC).
     """
     minute = (dt.minute // interval_minutes) * interval_minutes
     rounded = dt.replace(minute=minute, second=0, microsecond=0)
-    return rounded.isoformat()
+    return int(rounded.timestamp())
 
 
 def _row_to_dict(row):

@@ -1,9 +1,9 @@
-"""CSV report generation for printer statistics.
+"""Shift-based printer statistics report.
 
 Usage:
-    python report.py                          # last 7 days
-    python report.py --from 2026-09-10 --to 2026-09-17
-    python report.py --shifts                 # include shift breakdown
+    python report.py                          # today's shifts
+    python report.py --from 2026-09-10 --to 2026-09-18
+    python report.py --csv                    # export CSV
 """
 
 import argparse
@@ -11,14 +11,12 @@ import csv
 import json
 import os
 import sys
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 import db
 
 
 def load_config(config_path='config.json'):
-    """Load configuration from JSON file."""
     if not os.path.exists(config_path):
         print(f'ERROR: Config file not found: {config_path}', file=sys.stderr)
         sys.exit(2)
@@ -26,223 +24,214 @@ def load_config(config_path='config.json'):
         return json.load(f)
 
 
-def generate_weekly_report(config, from_date=None, to_date=None, include_shifts=False):
-    """Generate a weekly CSV report.
-
-    Args:
-        config: Configuration dict.
-        from_date: Start date string (YYYY-MM-DD).
-        to_date: End date string (YYYY-MM-DD).
-        include_shifts: If True, include per-shift breakdown.
-
-    Returns:
-        Path to generated CSV file.
-    """
-    db_path = config['db_path']
-    conn = db.init_db(db_path)
-
-    if from_date is None:
-        from_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-    if to_date is None:
-        to_date = datetime.now().strftime('%Y-%m-%d')
-
-    # Build lookups
-    location_map = {p['ip']: p['location'] for p in config['printers']}
-    model_map = {p['ip']: p['model'] for p in config['printers']}
-
-    # Get all printer IPs with data in range
-    cursor = conn.execute(
-        """SELECT DISTINCT printer_ip FROM snapshots
-           WHERE timestamp >= ? AND timestamp <= ?""",
-        (from_date, to_date + 'T23:59:59')
-    )
-    printer_ips = [row[0] for row in cursor.fetchall()]
-
-    # Generate filename
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    report_name = f"report_{from_date}_to_{to_date}.csv"
-    report_path = os.path.join(script_dir, report_name)
-
-    with open(report_path, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-
-        if include_shifts:
-            writer.writerow([
-                'IP Address', 'Location', 'Model', 'Serial',
-                'Shift', 'Date', 'Labels (start)', 'Labels (end)',
-                'Labels Delta', 'Meters (start)', 'Meters (end)',
-                'Meters Delta', 'Meter Unit', 'Status'
-            ])
-        else:
-            writer.writerow([
-                'IP Address', 'Location', 'Model', 'Serial',
-                'Date', 'Labels Total', 'Meters Total',
-                'Meter Unit', 'Status'
-            ])
-
-        for ip in printer_ips:
-            history = db.get_history(conn, ip, from_date, to_date)
-            location = location_map.get(ip, ip)
-            model = model_map.get(ip, '')
-            serial = history[0].get('serial', '') if history else ''
-
-            if include_shifts:
-                _write_shift_rows(writer, ip, location, model, serial, history, config)
-            else:
-                _write_summary_rows(writer, ip, location, model, serial, history)
-
-    db.close_db(conn)
-    print(f"Report saved to: {report_path}")
-    return report_path
+def _to_epoch(date_str):
+    """Convert 'YYYY-MM-DD' to epoch start of day."""
+    return int(datetime.fromisoformat(date_str).timestamp())
 
 
-def _write_shift_rows(writer, ip, location, model, serial, history, config):
-    """Write per-shift breakdown rows."""
-    shifts = config.get('shifts', [])
-
-    for snap in history:
-        ts = snap.get('timestamp', '')
-        if not ts:
-            continue
-
-        # Determine shift from timestamp
-        shift_name = _get_shift_for_time(ts, shifts)
-
-        writer.writerow([
-            ip,
-            location,
-            model,
-            serial,
-            shift_name,
-            ts[:10],  # date only
-            '',  # labels start
-            snap.get('labels_total', ''),
-            '',  # labels delta
-            '',  # meters start
-            snap.get('meters_total', ''),
-            '',  # meters delta
-            snap.get('meter_unit', ''),
-            snap.get('status', ''),
-        ])
-
-
-def _write_summary_rows(writer, ip, location, model, serial, history):
-    """Write summary rows (one per snapshot)."""
-    for snap in history:
-        writer.writerow([
-            ip,
-            location,
-            model,
-            serial,
-            snap.get('timestamp', '')[:10],
-            snap.get('labels_total', ''),
-            snap.get('meters_total', ''),
-            snap.get('meter_unit', ''),
-            snap.get('status', ''),
-        ])
-
-
-def _get_shift_for_time(timestamp_str, shifts):
-    """Determine which shift a timestamp belongs to."""
-    try:
-        time_part = timestamp_str[11:16]  # HH:MM
-        if len(time_part) != 5 or time_part[2] != ':':
-            return 'Unknown'
-        h = int(time_part[:2])
-        m = int(time_part[3:5])
-        if h > 23 or m > 59:
-            return 'Unknown'
-    except (IndexError, ValueError):
-        return 'Unknown'
-
+def _epoch_to_shift(epoch, shifts):
+    """Determine which shift an epoch timestamp belongs to."""
+    dt = datetime.fromtimestamp(epoch)
+    t = dt.strftime('%H:%M')
     for shift in shifts:
-        start = shift['start']
-        end = shift['end']
-        name = shift['name']
-
-        if start <= end:
-            if start <= time_part <= end:
-                return name
+        s, e = shift['start'], shift['end']
+        if s <= e:
+            if s <= t <= e:
+                return shift['name']
         else:
-            # Overnight shift
-            if time_part >= start or time_part <= end:
-                return name
-
-    return 'Unknown'
+            if t >= s or t <= e:
+                return shift['name']
+    return None
 
 
-def generate_summary(config, from_date=None, to_date=None):
-    """Generate a text summary to stdout.
+def _convert_to_meters(value, unit):
+    """Convert a value to meters based on unit."""
+    if value is None:
+        return None
+    if unit == 'cm':
+        return value / 100.0
+    if unit == 'm':
+        return value
+    if unit == 'in':
+        return value * 0.0254
+    if unit == 'mm':
+        return value / 1000.0
+    return value  # unknown unit, pass through
 
-    Args:
-        config: Configuration dict.
-        from_date: Start date.
-        to_date: End date.
+
+def _get_snapshots_in_window(conn, ip, start_epoch, end_epoch):
+    """Get snapshots for a printer within a time window."""
+    rows = conn.execute(
+        """SELECT timestamp, labels_total, meters_total, meter_unit
+           FROM snapshots
+           WHERE printer_ip = ? AND timestamp >= ? AND timestamp <= ?
+           ORDER BY timestamp ASC""",
+        (ip, start_epoch, end_epoch)
+    ).fetchall()
+    return rows
+
+
+def compute_shift_deltas(config, from_date, to_date):
+    """Compute shift deltas for all printers.
+
+    Returns list of dicts with:
+        ip, model, shift, date, labels_delta, meters_delta, meter_unit
     """
     db_path = config['db_path']
     conn = db.init_db(db_path)
+    shifts = config.get('shifts', [])
+    printer_map = {p['ip']: p for p in config.get('printers', [])}
 
-    if from_date is None:
-        from_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-    if to_date is None:
-        to_date = datetime.now().strftime('%Y-%m-%d')
+    start_epoch = _to_epoch(from_date)
+    end_epoch = _to_epoch(to_date) + 86399  # end of day
 
-    location_map = {p['ip']: p['location'] for p in config['printers']}
+    results = []
 
-    cursor = conn.execute(
-        """SELECT DISTINCT printer_ip FROM snapshots
-           WHERE timestamp >= ? AND timestamp <= ?""",
-        (from_date, to_date + 'T23:59:59')
-    )
-    printer_ips = [row[0] for row in cursor.fetchall()]
+    for printer_cfg in config.get('printers', []):
+        ip = printer_cfg['ip']
+        model = printer_cfg['model']
 
-    total_labels = 0
-    total_meters = 0.0
-
-    print(f"\n{'='*70}")
-    print(f"PRINTER STATISTICS REPORT: {from_date} to {to_date}")
-    print(f"{'='*70}")
-    print(f"{'Location':<30} {'Labels':>10} {'Meters':>10} {'Unit':<10}")
-    print(f"{'-'*70}")
-
-    for ip in printer_ips:
-        history = db.get_history(conn, ip, from_date, to_date)
-        if not history:
+        # Get all snapshots in range
+        rows = _get_snapshots_in_window(conn, ip, start_epoch, end_epoch)
+        if not rows:
             continue
 
-        location = location_map.get(ip, ip)
-        labels = history[-1].get('labels_total', 0) or 0
-        meters = history[-1].get('meters_total', 0) or 0
-        unit = history[-1].get('meter_unit', '')
+        # For each shift, find first and last snapshot in the window
+        for shift in shifts:
+            shift_name = shift['name']
+            s_h, s_m = map(int, shift['start'].split(':'))
+            e_h, e_m = map(int, shift['end'].split(':'))
 
-        total_labels += labels
-        total_meters += meters
+            # Skip overnight shifts for now
+            if s_h > e_h or (s_h == e_h and s_m > e_m):
+                continue
 
-        print(f"{location:<30} {labels:>10,} {meters:>10,.1f} {unit:<10}")
+            # Iterate each day in range
+            current_date = datetime.fromisoformat(from_date).date()
+            end_date = datetime.fromisoformat(to_date).date()
 
-    print(f"{'-'*70}")
-    print(f"{'TOTAL':<30} {total_labels:>10,} {total_meters:>10,.1f}")
-    print(f"{'='*70}\n")
+            while current_date <= end_date:
+                shift_start = datetime(current_date.year, current_date.month, current_date.day,
+                                       s_h, s_m, tzinfo=timezone.utc)
+                shift_end = datetime(current_date.year, current_date.month, current_date.day,
+                                     e_h, e_m, tzinfo=timezone.utc)
+
+                shift_start_ep = int(shift_start.timestamp())
+                shift_end_ep = int(shift_end.timestamp())
+
+                window = _get_snapshots_in_window(conn, ip, shift_start_ep, shift_end_ep)
+                if len(window) >= 2:
+                    first = window[0]
+                    last = window[-1]
+
+                    # Labels delta
+                    labels_start = first[1] or 0
+                    labels_end = last[1] or 0
+                    labels_delta = labels_end - labels_start if first[1] is not None and last[1] is not None else None
+
+                    # Meters delta (convert to meters)
+                    unit = first[3] or last[3] or 'unknown'
+                    meters_start = _convert_to_meters(first[2], unit)
+                    meters_end = _convert_to_meters(last[2], unit)
+                    meters_delta = (meters_end - meters_start) if meters_start is not None and meters_end is not None else None
+
+                    results.append({
+                        'ip': ip,
+                        'model': model,
+                        'shift': shift_name,
+                        'date': current_date.isoformat(),
+                        'labels_delta': labels_delta,
+                        'meters_delta': meters_delta,
+                    })
+
+                current_date += timedelta(days=1)
 
     db.close_db(conn)
+    return results
+
+
+def print_report(results, config):
+    """Print a formatted shift report to stdout."""
+    printer_map = {p['ip']: p for p in config.get('printers', [])}
+
+    # Separate Zebra (has labels) and Sato (meters only)
+    zebra = [r for r in results if 'zebra' in r['model'].lower()]
+    sato = [r for r in results if 'sato' in r['model'].lower()]
+
+    if zebra:
+        print(f"\n{'='*80}")
+        print(f"  ZEBRA — Labels + Meters (converted to m)")
+        print(f"{'='*80}")
+        print(f"  {'IP':<15} {'Model':<20} {'Shift':<12} {'Date':<12} {'Labels':>10} {'Meters (m)':>12}")
+        print(f"  {'-'*76}")
+        for r in sorted(zebra, key=lambda x: (x['date'], x['shift'])):
+            labels = f"{r['labels_delta']:,}" if r['labels_delta'] is not None else '-'
+            meters = f"{r['meters_delta']:,.1f}" if r['meters_delta'] is not None else '-'
+            model_short = r['model'].replace('Zebra ', '')
+            print(f"  {r['ip']:<15} {model_short:<20} {r['shift']:<12} {r['date']:<12} {labels:>10} {meters:>12}")
+
+        total_labels = sum(r['labels_delta'] or 0 for r in zebra)
+        total_meters = sum(r['meters_delta'] or 0 for r in zebra)
+        print(f"  {'-'*76}")
+        print(f"  {'TOTAL':<48} {total_labels:>10,} {total_meters:>12,.1f}")
+        print()
+
+    if sato:
+        print(f"\n{'='*80}")
+        print(f"  SATO — Meters")
+        print(f"{'='*80}")
+        print(f"  {'IP':<15} {'Model':<20} {'Shift':<12} {'Date':<12} {'Meters (m)':>12}")
+        print(f"  {'-'*76}")
+        for r in sorted(sato, key=lambda x: (x['date'], x['shift'])):
+            meters = f"{r['meters_delta']:,.1f}" if r['meters_delta'] is not None else '-'
+            model_short = r['model'].replace('Sato ', '')
+            print(f"  {r['ip']:<15} {model_short:<20} {r['shift']:<12} {r['date']:<12} {meters:>12}")
+
+        total_meters = sum(r['meters_delta'] or 0 for r in sato)
+        print(f"  {'-'*76}")
+        print(f"  {'TOTAL':<48} {total_meters:>12,.1f}")
+        print()
+
+    if not zebra and not sato:
+        print("\n  No shift data found in the specified date range.")
+        print("  Snapshots need to be collected during shift windows.\n")
+
+
+def export_csv(results, config, path):
+    """Export shift report to CSV."""
+    with open(path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['IP', 'Model', 'Shift', 'Date', 'Labels Delta', 'Meters Delta (m)'])
+        for r in sorted(results, key=lambda x: (x['ip'], x['date'], x['shift'])):
+            writer.writerow([
+                r['ip'], r['model'], r['shift'], r['date'],
+                r['labels_delta'] if r['labels_delta'] is not None else '',
+                round(r['meters_delta'], 1) if r['meters_delta'] is not None else '',
+            ])
+    print(f"CSV saved to: {path}")
 
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description='Printer statistics report generator')
-    parser.add_argument('--config', default='config.json', help='Path to config.json')
+    parser = argparse.ArgumentParser(description='Printer shift report')
+    parser.add_argument('--config', default='config.json')
     parser.add_argument('--from', dest='from_date', help='Start date (YYYY-MM-DD)')
     parser.add_argument('--to', dest='to_date', help='End date (YYYY-MM-DD)')
-    parser.add_argument('--shifts', action='store_true', help='Include shift breakdown')
-    parser.add_argument('--summary', action='store_true', help='Print summary to stdout')
+    parser.add_argument('--csv', action='store_true', help='Export CSV')
     args = parser.parse_args()
 
     config = load_config(args.config)
 
-    if args.summary:
-        generate_summary(config, args.from_date, args.to_date)
+    from_date = args.from_date or datetime.now().strftime('%Y-%m-%d')
+    to_date = args.to_date or datetime.now().strftime('%Y-%m-%d')
+
+    results = compute_shift_deltas(config, from_date, to_date)
+
+    if args.csv:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(script_dir, f'report_{from_date}_to_{to_date}.csv')
+        export_csv(results, config, path)
     else:
-        generate_weekly_report(config, args.from_date, args.to_date, args.shifts)
+        print_report(results, config)
 
 
 if __name__ == '__main__':
