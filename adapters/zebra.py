@@ -30,8 +30,6 @@ class ZebraAdapter(PrinterAdapter):
             'meters_total': None,
             'meter_unit': 'unknown',
             'model_name': '',
-            'serial': '',
-            'status': 'unknown',
             'reachable': False,
         }
 

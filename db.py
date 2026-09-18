@@ -17,8 +17,6 @@ CREATE TABLE IF NOT EXISTS snapshots (
     meters_total  REAL,
     meter_unit    TEXT,
     model_name    TEXT,
-    serial        TEXT,
-    status        TEXT,
     PRIMARY KEY (printer_ip, timestamp)
 );
 
@@ -58,7 +56,7 @@ def close_db(conn):
 
 
 def save_snapshot(conn, printer_ip, labels_total, meters_total, meter_unit,
-                  model_name, serial, status, timestamp=None):
+                  model_name, timestamp=None):
     """Save a printer counter snapshot. Idempotent via INSERT OR IGNORE.
 
     Args:
@@ -68,8 +66,6 @@ def save_snapshot(conn, printer_ip, labels_total, meters_total, meter_unit,
         meters_total: Total meters/length printed.
         meter_unit: Unit for meters (e.g. 'cm', 'mm').
         model_name: Printer model string.
-        serial: Serial number.
-        status: Printer status string.
         timestamp: ISO 8601 timestamp. If None, uses current time rounded to 5min.
 
     Returns:
@@ -84,10 +80,10 @@ def save_snapshot(conn, printer_ip, labels_total, meters_total, meter_unit,
         cursor = conn.execute(
             """INSERT OR IGNORE INTO snapshots
                (printer_ip, timestamp, labels_total, meters_total, meter_unit,
-                model_name, serial, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                model_name)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (printer_ip, timestamp, labels_total, meters_total, meter_unit,
-             model_name, serial, status)
+             model_name)
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -108,7 +104,7 @@ def get_latest_snapshot(conn, printer_ip):
     """
     cursor = conn.execute(
         """SELECT printer_ip, timestamp, labels_total, meters_total,
-                  meter_unit, model_name, serial, status
+                  meter_unit, model_name
            FROM snapshots
            WHERE printer_ip = ?
            ORDER BY timestamp DESC
@@ -134,7 +130,7 @@ def get_snapshot_at(conn, printer_ip, timestamp):
     """
     cursor = conn.execute(
         """SELECT printer_ip, timestamp, labels_total, meters_total,
-                  meter_unit, model_name, serial, status
+                  meter_unit, model_name
            FROM snapshots
            WHERE printer_ip = ? AND timestamp <= ?
            ORDER BY timestamp DESC
@@ -193,7 +189,7 @@ def get_all_printers_latest(conn):
     """
     cursor = conn.execute(
         """SELECT s.printer_ip, s.timestamp, s.labels_total, s.meters_total,
-                  s.meter_unit, s.model_name, s.serial, s.status
+                  s.meter_unit, s.model_name
            FROM snapshots s
            INNER JOIN (
                SELECT printer_ip, MAX(timestamp) as max_ts
@@ -318,6 +314,4 @@ def _row_to_dict(row):
         'meters_total': row[3],
         'meter_unit': row[4],
         'model_name': row[5],
-        'serial': row[6],
-        'status': row[7],
     }

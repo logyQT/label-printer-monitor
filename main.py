@@ -214,8 +214,6 @@ def run_collection(config, shift_phase=None, shift_name=None):
                 meters_total=counters.get('meters_total'),
                 meter_unit=counters.get('meter_unit', 'unknown'),
                 model_name=counters.get('model_name', ''),
-                serial=counters.get('serial', ''),
-                status=counters.get('status', 'unknown'),
             )
             success += 1
             log.info(
@@ -302,9 +300,9 @@ def generate_report(config, from_date=None, to_date=None):
     with open(report_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow([
-            'IP Address', 'Location', 'Model', 'Serial',
+            'IP Address', 'Location', 'Model',
             'Shift', 'Date', 'Labels Printed', 'Meters Printed',
-            'Meter Unit', 'Status'
+            'Meter Unit',
         ])
 
         for ip in printer_ips:
@@ -316,13 +314,11 @@ def generate_report(config, from_date=None, to_date=None):
                     ip,
                     location,
                     snap.get('model_name', ''),
-                    snap.get('serial', ''),
                     '',  # shift name (could be derived from timestamp)
                     snap.get('timestamp', ''),
                     snap.get('labels_total', ''),
                     snap.get('meters_total', ''),
                     snap.get('meter_unit', ''),
-                    snap.get('status', ''),
                 ])
 
     db.close_db(conn)

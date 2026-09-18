@@ -82,7 +82,7 @@ class TestGenerateWeeklyReport(unittest.TestCase):
 
     def test_generates_csv_file(self):
         conn = db.init_db(':memory:')
-        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', 'ABC123', 'idle', timestamp='2026-09-17T10:00:00')
+        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', timestamp='2026-09-17T10:00:00')
         db.close_db(conn)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -96,7 +96,7 @@ class TestGenerateWeeklyReport(unittest.TestCase):
 
     def test_csv_has_headers(self):
         conn = db.init_db(':memory:')
-        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', 'ABC123', 'idle', timestamp='2026-09-17T10:00:00')
+        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', timestamp='2026-09-17T10:00:00')
         db.close_db(conn)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -126,7 +126,6 @@ class TestWriteSummaryRows(unittest.TestCase):
                 'labels_total': 100,
                 'meters_total': 50.0,
                 'meter_unit': 'cm',
-                'status': 'idle',
             }
         ]
         report._write_summary_rows(writer, '10.0.0.1', 'Line 1', 'Zebra ZT230', 'ABC123', history)
@@ -157,7 +156,6 @@ class TestWriteShiftRows(unittest.TestCase):
                 'labels_total': 100,
                 'meters_total': 50.0,
                 'meter_unit': 'cm',
-                'status': 'idle',
             }
         ]
         report._write_shift_rows(writer, '10.0.0.1', 'Line 1', 'Zebra ZT230', 'ABC123', history, self.config)
@@ -177,7 +175,7 @@ class TestGenerateSummary(unittest.TestCase):
             ],
         }
         conn = db.init_db(':memory:')
-        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', 'ABC123', 'idle', timestamp='2026-09-17T10:00:00')
+        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', timestamp='2026-09-17T10:00:00')
         db.close_db(conn)
 
         with patch('builtins.print') as mock_print:

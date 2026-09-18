@@ -67,13 +67,21 @@ class TestLoadConfig(unittest.TestCase):
 class TestSetupLogging(unittest.TestCase):
     """Tests for setup_logging()."""
 
+    def _close_logging_handlers(self):
+        """Close logging handlers so files are not locked on Windows."""
+        import logging
+        logger = logging.getLogger('printer_stats')
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+
     def test_creates_log_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = os.path.join(tmpdir, 'test_logs')
             log_file = main.setup_logging(log_dir)
             self.assertTrue(os.path.exists(log_dir))
             self.assertTrue(os.path.exists(log_file))
-            os.unlink(log_file)
+            self._close_logging_handlers()
 
     def test_log_file_name_format(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -81,7 +89,7 @@ class TestSetupLogging(unittest.TestCase):
             basename = os.path.basename(log_file)
             self.assertTrue(basename.startswith('run_'))
             self.assertTrue(basename.endswith('.log'))
-            os.unlink(log_file)
+            self._close_logging_handlers()
 
 
 class TestDetectCurrentShift(unittest.TestCase):
@@ -161,8 +169,6 @@ class TestCollectPrinter(unittest.TestCase):
             'meters_total': 50.0,
             'meter_unit': 'cm',
             'model_name': 'Zebra ZT230',
-            'serial': 'ABC123',
-            'status': 'idle',
             'reachable': True,
         }
         config = {'ip': '10.0.0.1', 'location': 'Line 1'}
@@ -177,8 +183,6 @@ class TestCollectPrinter(unittest.TestCase):
             'meters_total': None,
             'meter_unit': 'unknown',
             'model_name': '',
-            'serial': '',
-            'status': 'offline',
             'reachable': False,
         }
         config = {'ip': '10.0.0.1', 'location': 'Line 1'}
@@ -215,8 +219,6 @@ class TestRunCollection(unittest.TestCase):
             'meters_total': 50.0,
             'meter_unit': 'cm',
             'model_name': 'Zebra ZT230',
-            'serial': 'ABC123',
-            'status': 'idle',
             'reachable': True,
         }
         mock_create.return_value = adapter
@@ -233,8 +235,6 @@ class TestRunCollection(unittest.TestCase):
             'meters_total': None,
             'meter_unit': 'unknown',
             'model_name': '',
-            'serial': '',
-            'status': 'offline',
             'reachable': False,
         }
         mock_create.return_value = adapter
@@ -256,8 +256,8 @@ class TestCalculateShiftDeltas(unittest.TestCase):
 
     def test_calculates_deltas(self):
         conn = db.init_db(':memory:')
-        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', 'SN', 'idle', timestamp='2026-09-17T06:00:00')
-        db.save_snapshot(conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra', 'SN', 'idle', timestamp='2026-09-17T14:00:00')
+        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra', timestamp='2026-09-17T06:00:00')
+        db.save_snapshot(conn, '10.0.0.1', 200, 100.0, 'cm', 'Zebra', timestamp='2026-09-17T14:00:00')
         db.close_db(conn)
 
         # Overwrite config to use in-memory db
@@ -278,7 +278,7 @@ class TestGenerateReport(unittest.TestCase):
         }
         # Initialize database with some data
         conn = db.init_db(':memory:')
-        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', 'ABC123', 'idle', timestamp='2026-09-17T10:00:00')
+        db.save_snapshot(conn, '10.0.0.1', 100, 50.0, 'cm', 'Zebra ZT230', timestamp='2026-09-17T10:00:00')
         db.close_db(conn)
 
         # The function will use its own connection, so this test is limited
