@@ -21,7 +21,7 @@ class ZebraGX430tAdapter(PrinterAdapter):
 
     def __init__(self, ip, community='public', timeout_sec=5, retries=2,
                  version=0, **kwargs):
-        # Force SNMPv1 — GX430t doesn't respond to v2c
+        # Force SNMPv1 - GX430t doesn't respond to v2c
         super().__init__(ip, community, timeout_sec, retries, version=0, **kwargs)
 
     def get_counters(self) -> dict:

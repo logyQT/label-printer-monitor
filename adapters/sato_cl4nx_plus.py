@@ -1,7 +1,7 @@
 """Sato CL4NX Plus adapter.
 
 Two SNMP requests total:
-1. Poke (GET) — check reachability
+1. Poke (GET) - check reachability
 2. Meters + unit with exponential backoff retry
 
 No label count available via SNMP on Sato.

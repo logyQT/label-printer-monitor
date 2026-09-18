@@ -177,7 +177,7 @@ class TestDeltaCalculation(unittest.TestCase):
         self.assertIsNone(delta)
 
     def test_missing_end_snapshot(self):
-        """No snapshot at shift end — get_snapshot_at returns closest-before."""
+        """No snapshot at shift end - get_snapshot_at returns closest-before."""
         db.save_snapshot(self.conn, '10.0.0.1', 1000, 50.0, 'cm',
                          'Zebra ZT230',
                          timestamp='2026-09-17T06:00:00')
@@ -231,7 +231,7 @@ class TestDeltaCalculation(unittest.TestCase):
         db.save_snapshot(self.conn, '10.0.0.1', 200, 10.0, 'cm',
                          'Zebra ZT230',
                          timestamp='2026-09-17T06:05:00')
-        # Query for 06:00 — should get 05:55 snapshot (closest before)
+        # Query for 06:00 - should get 05:55 snapshot (closest before)
         snap = db.get_snapshot_at(self.conn, '10.0.0.1', '2026-09-17T06:00:00')
         self.assertEqual(snap['labels_total'], 100)
 

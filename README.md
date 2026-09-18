@@ -104,7 +104,7 @@ schtasks /create /tn "PrinterStats" /tr "python main.py --collect" /sc daily /st
 | Printer | Labels | Meters |
 |---------|--------|--------|
 | Zebra   | ✓      | ✓ (cm → m) |
-| Sato    | —      | ✓ (m)  |
+| Sato    | -      | ✓ (m)  |
 
 - Zebra: vendor OIDs under enterprise 10642
 - Sato: standard Printer MIB (RFC 3805)

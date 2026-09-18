@@ -1,7 +1,7 @@
 """SQLite storage layer for printer statistics.
 
 Handles snapshots, shift deltas, and idempotent inserts.
-Zero external dependencies — uses Python's built-in sqlite3.
+Zero external dependencies - uses Python's built-in sqlite3.
 """
 
 import sqlite3

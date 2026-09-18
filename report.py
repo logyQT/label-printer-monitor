@@ -121,7 +121,7 @@ def print_report(weeks, config):
         mon, sun = _week_dates(wk)
 
         print(f"\n{'='*80}")
-        print(f"  WEEK {wk}  ({mon} — {sun})")
+        print(f"  WEEK {wk}  ({mon} - {sun})")
         print(f"{'='*80}")
 
         if has_labels:

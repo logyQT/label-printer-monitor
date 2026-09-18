@@ -1,4 +1,4 @@
-"""Tests for report.py — shift-based printer statistics.
+"""Tests for report.py - shift-based printer statistics.
 
 Tests cover:
 - Config loading
