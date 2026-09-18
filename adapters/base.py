@@ -1,11 +1,10 @@
-"""Abstract base class for printer adapters.
-
-All printer adapters must implement this interface.
-"""
+"""Abstract base class for printer adapters."""
 
 import logging
 import time
 from abc import ABC, abstractmethod
+
+log = logging.getLogger('printer_stats')
 
 
 class PrinterAdapter(ABC):
@@ -36,7 +35,7 @@ class PrinterAdapter(ABC):
         from snmp_client import get, SnmpTimeout, SnmpError
         tag = label or oid
         try:
-            logging.debug(f"  SNMP GET  {self.ip} {oid}  [{tag}]")
+            log.debug(f"  SNMP GET  {self.ip} {oid}  [{tag}]")
             value, type_tag = get(
                 self.ip, oid,
                 community=self.community,
@@ -44,10 +43,10 @@ class PrinterAdapter(ABC):
                 retries=self.retries,
                 version=self.version,
             )
-            logging.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
+            log.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
             return value, type_tag
         except (SnmpTimeout, SnmpError) as e:
-            logging.debug(f"  SNMP FAIL {self.ip} {oid}  [{tag}]: {e}")
+            log.debug(f"  SNMP FAIL {self.ip} {oid}  [{tag}]: {e}")
             return None, None
 
     def _snmp_get_retry(self, oid, label=None, attempts=3):
@@ -58,7 +57,7 @@ class PrinterAdapter(ABC):
                 return value, type_tag
             if attempt < attempts - 1:
                 delay = 0.5 * (2 ** attempt)
-                logging.debug(f"  RETRY {self.ip} {label} attempt {attempt + 2}/{attempts} in {delay}s")
+                log.debug(f"  RETRY {self.ip} {label} attempt {attempt + 2}/{attempts} in {delay}s")
                 time.sleep(delay)
         return None, None
 

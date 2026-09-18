@@ -21,6 +21,8 @@ from typing import Optional
 import db
 from adapters import create_adapter
 
+log = logging.getLogger('printer_stats')
+
 
 def load_config(config_path='config.json'):
     """Load configuration from JSON file.
@@ -60,19 +62,27 @@ def setup_logging(log_dir='logs', verbose=False):
 
     level = logging.DEBUG if verbose else logging.INFO
 
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+
     # File handler always gets DEBUG
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
 
     # Console handler respects verbose flag
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
+    console_handler.setFormatter(formatter)
 
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        handlers=[file_handler, console_handler],
-    )
+    # Root logger set to WARNING so pysnmp noise doesn't leak through
+    root = logging.getLogger()
+    root.setLevel(logging.WARNING)
+
+    # Our logger gets everything, filtered by handlers
+    app_logger = logging.getLogger('printer_stats')
+    app_logger.setLevel(logging.DEBUG)
+    app_logger.addHandler(file_handler)
+    app_logger.addHandler(console_handler)
     return log_file
 
 
@@ -142,11 +152,11 @@ def collect_printer(adapter, printer_cfg):
     try:
         counters = adapter.get_counters()
         if not counters.get('reachable'):
-            logging.warning(f"Printer {printer_cfg['ip']} ({printer_cfg['location']}) not reachable")
+            log.warning(f"Printer {printer_cfg['ip']} ({printer_cfg['location']}) not reachable")
             return None
         return counters
     except Exception as e:
-        logging.error(f"Error collecting from {printer_cfg['ip']}: {e}")
+        log.error(f"Error collecting from {printer_cfg['ip']}: {e}")
         return None
 
 
@@ -174,7 +184,7 @@ def run_collection(config, shift_phase=None, shift_name=None):
     total = len(config['printers'])
 
     phase_label = f" ({shift_phase} of {shift_name})" if shift_phase else ""
-    logging.info(f"Starting collection{phase_label} for {total} printers")
+    log.info(f"Starting collection{phase_label} for {total} printers")
 
     for printer_cfg in config['printers']:
         ip = printer_cfg['ip']
@@ -208,7 +218,7 @@ def run_collection(config, shift_phase=None, shift_name=None):
                 status=counters.get('status', 'unknown'),
             )
             success += 1
-            logging.info(
+            log.info(
                 f"OK: {location} ({ip}) - "
                 f"labels={counters.get('labels_total')}, "
                 f"meters={counters.get('meters_total')} "
@@ -216,14 +226,14 @@ def run_collection(config, shift_phase=None, shift_name=None):
             )
 
         except ValueError as e:
-            logging.error(f"Config error for {ip}: {e}")
+            log.error(f"Config error for {ip}: {e}")
             fail += 1
         except Exception as e:
-            logging.error(f"Unexpected error for {ip}: {e}")
+            log.error(f"Unexpected error for {ip}: {e}")
             fail += 1
 
     db.close_db(conn)
-    logging.info(f"Collection complete: {success}/{total} success, {fail}/{total} failed")
+    log.info(f"Collection complete: {success}/{total} success, {fail}/{total} failed")
     return success, fail, total
 
 
@@ -239,7 +249,7 @@ def calculate_shift_deltas(config, shift_name, shift_start, shift_end):
     db_path = config['db_path']
     conn = db.init_db(db_path)
 
-    logging.info(f"Calculating shift deltas for {shift_name}")
+    log.info(f"Calculating shift deltas for {shift_name}")
 
     # Build location lookup
     location_map = {p['ip']: p['location'] for p in config['printers']}
@@ -251,7 +261,7 @@ def calculate_shift_deltas(config, shift_name, shift_start, shift_end):
         labels = r.get('labels_delta', 0) or 0
         meters = r.get('meters_delta', 0) or 0
         unit = r.get('start_snapshot', {}).get('meter_unit', '')
-        logging.info(
+        log.info(
             f"SHIFT {shift_name}: {location} ({ip}) - "
             f"labels={labels}, meters={meters} {unit}"
         )
@@ -316,7 +326,7 @@ def generate_report(config, from_date=None, to_date=None):
                 ])
 
     db.close_db(conn)
-    logging.info(f"Report generated: {report_path}")
+    log.info(f"Report generated: {report_path}")
     print(f"Report saved to: {report_path}")
     return report_path
 
@@ -336,7 +346,7 @@ def main():
 
     config = load_config(args.config)
     log_file = setup_logging(config.get('log_dir', 'logs'), verbose=args.verbose)
-    logging.info(f"Log file: {log_file}")
+    log.info(f"Log file: {log_file}")
 
     if args.report:
         generate_report(config, args.from_date, args.to_date)
@@ -356,17 +366,17 @@ def main():
             # Find which shift is starting
             for shift in shifts:
                 if _within_minutes(now.strftime('%H:%M'), shift['start'], 15):
-                    logging.info(f"Recording START of shift: {shift['name']}")
+                    log.info(f"Recording START of shift: {shift['name']}")
                     run_collection(config, shift_phase='start', shift_name=shift['name'])
                     return
-            logging.info("No matching shift start detected, collecting anyway")
+            log.info("No matching shift start detected, collecting anyway")
             run_collection(config, shift_phase='start')
 
         elif shift_phase == 'end':
             # Find which shift is ending
             for shift in shifts:
                 if _within_minutes(now.strftime('%H:%M'), shift['end'], 15):
-                    logging.info(f"Recording END of shift: {shift['name']}")
+                    log.info(f"Recording END of shift: {shift['name']}")
                     run_collection(config, shift_phase='end', shift_name=shift['name'])
                     # Calculate deltas
                     start_time = now.replace(
@@ -380,7 +390,7 @@ def main():
                         now.isoformat()
                     )
                     return
-            logging.info("No matching shift end detected, collecting anyway")
+            log.info("No matching shift end detected, collecting anyway")
             run_collection(config, shift_phase='end')
         return
 
