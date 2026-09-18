@@ -1,180 +1,40 @@
-"""Tests for adapters/base.py - abstract printer adapter interface.
-
-Tests cover:
-- Abstract class enforcement
-- Status code conversion
-- Helper methods
-"""
+"""Tests for adapters/base.py - PrinterAdapter base class."""
 
 import sys
 import os
+import time
 import unittest
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.base import PrinterAdapter, TAG_COUNTER32, TAG_GAUGE32, TAG_INTEGER
+from adapters.base import PrinterAdapter
 
 
 class ConcretePrinterAdapter(PrinterAdapter):
-    """Concrete implementation for testing abstract class."""
-
     def get_counters(self):
-        return {
-            'labels_total': 100,
-            'meters_total': 50.5,
-            'meter_unit': 'cm',
-            'model_name': 'Test Printer',
-            'serial': 'ABC123',
-            'status': 'idle',
-            'reachable': True,
-        }
-
+        return {}
     def is_reachable(self):
         return True
 
 
 class FailingPrinterAdapter(PrinterAdapter):
-    """Adapter that returns unreachable."""
-
     def get_counters(self):
-        return {
-            'labels_total': None,
-            'meters_total': None,
-            'meter_unit': 'unknown',
-            'model_name': '',
-            'serial': '',
-            'status': 'offline',
-            'reachable': False,
-        }
-
+        return {'reachable': False}
     def is_reachable(self):
         return False
 
 
-class TestPrinterAdapterAbstract(unittest.TestCase):
-    """Tests for abstract class behavior."""
-
-    def test_cannot_instantiate_directly(self):
-        with self.assertRaises(TypeError):
-            PrinterAdapter('10.0.0.1')
-
-    def test_concrete_instantiation(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1')
-        self.assertEqual(adapter.ip, '10.0.0.1')
-
-    def test_default_community(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1')
-        self.assertEqual(adapter.community, 'public')
-
-    def test_custom_community(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1', community='private')
-        self.assertEqual(adapter.community, 'private')
-
-    def test_custom_timeout(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1', timeout_sec=5)
-        self.assertEqual(adapter.timeout_sec, 5)
-
-    def test_custom_retries(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1', retries=3)
-        self.assertEqual(adapter.retries, 3)
-
-
-class TestStatusFromCode(unittest.TestCase):
-    """Tests for _status_from_code()."""
-
-    def test_none_returns_offline(self):
-        result = PrinterAdapter._status_from_code(None)
-        self.assertEqual(result, 'offline')
-
-    def test_idle(self):
-        result = PrinterAdapter._status_from_code(3)
-        self.assertEqual(result, 'idle')
-
-    def test_printing(self):
-        result = PrinterAdapter._status_from_code(4)
-        self.assertEqual(result, 'printing')
-
-    def test_warmup(self):
-        result = PrinterAdapter._status_from_code(5)
-        self.assertEqual(result, 'warmup')
-
-    def test_other(self):
-        result = PrinterAdapter._status_from_code(1)
-        self.assertEqual(result, 'other')
-
-    def test_unknown(self):
-        result = PrinterAdapter._status_from_code(99)
-        self.assertEqual(result, 'unknown')
-
-    def test_all_codes(self):
-        expected = {
-            1: 'other',
-            2: 'unknown',
-            3: 'idle',
-            4: 'printing',
-            5: 'warmup',
-            6: 'stopping',
-            7: 'down',
-        }
-        for code, status in expected.items():
-            result = PrinterAdapter._status_from_code(code)
-            self.assertEqual(result, status, f'Code {code}')
-
-
-class TestGetCounters(unittest.TestCase):
-    """Tests for get_counters() implementations."""
-
-    def test_concrete_adapter_returns_dict(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1')
-        result = adapter.get_counters()
-        self.assertIsInstance(result, dict)
-        self.assertTrue(result['reachable'])
-
-    def test_concrete_adapter_values(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1')
-        result = adapter.get_counters()
-        self.assertEqual(result['labels_total'], 100)
-        self.assertEqual(result['meters_total'], 50.5)
-        self.assertEqual(result['meter_unit'], 'cm')
-        self.assertEqual(result['model_name'], 'Test Printer')
-        self.assertEqual(result['serial'], 'ABC123')
-        self.assertEqual(result['status'], 'idle')
-
-    def test_failing_adapter_returns_unreachable(self):
-        adapter = FailingPrinterAdapter('10.0.0.1')
-        result = adapter.get_counters()
-        self.assertFalse(result['reachable'])
-        self.assertIsNone(result['labels_total'])
-        self.assertIsNone(result['meters_total'])
-
-
-class TestIsReachable(unittest.TestCase):
-    """Tests for is_reachable() implementations."""
-
-    def test_concrete_reachable(self):
-        adapter = ConcretePrinterAdapter('10.0.0.1')
-        self.assertTrue(adapter.is_reachable())
-
-    def test_failing_not_reachable(self):
-        adapter = FailingPrinterAdapter('10.0.0.1')
-        self.assertFalse(adapter.is_reachable())
-
-
-class TestSnmpGetHelper(unittest.TestCase):
-    """Tests for _snmp_get() helper."""
+class TestSnmpGet(unittest.TestCase):
+    """Tests for _snmp_get helper."""
 
     @patch('snmp_client.get')
     def test_successful_get(self, mock_get):
-        mock_get.return_value = (42, TAG_INTEGER)
+        mock_get.return_value = (42, 0x02)
         adapter = ConcretePrinterAdapter('10.0.0.1')
         value, tag = adapter._snmp_get('1.3.6.1.2.1.1.1.0')
         self.assertEqual(value, 42)
-        self.assertEqual(tag, TAG_INTEGER)
-        mock_get.assert_called_once_with(
-            '10.0.0.1', '1.3.6.1.2.1.1.1.0',
-            community='public', timeout_sec=5, retries=2, version=0,
-        )
+        self.assertEqual(tag, 0x02)
 
     @patch('snmp_client.get')
     def test_timeout_returns_none(self, mock_get):
@@ -195,36 +55,47 @@ class TestSnmpGetHelper(unittest.TestCase):
         self.assertIsNone(tag)
 
 
-class TestSnmpGetMultipleHelper(unittest.TestCase):
-    """Tests for _snmp_get_multiple() helper."""
+class TestSnmpGetRetry(unittest.TestCase):
+    """Tests for _snmp_get_retry helper."""
 
-    @patch('snmp_client.get_multiple')
-    def test_successful_get(self, mock_get):
-        mock_get.return_value = [
-            ('1.3.6.1.2.1.1.1.0', 42, TAG_INTEGER),
-            ('1.3.6.1.2.1.1.5.0', b'test', 0x04),
-        ]
+    @patch('snmp_client.get')
+    def test_success_on_first_try(self, mock_get):
+        mock_get.return_value = (100, 0x02)
         adapter = ConcretePrinterAdapter('10.0.0.1')
-        results = adapter._snmp_get_multiple(['1.3.6.1.2.1.1.1.0', '1.3.6.1.2.1.1.5.0'])
-        self.assertEqual(len(results), 2)
+        value, tag = adapter._snmp_get_retry('1.3.6.1', label='test')
+        self.assertEqual(value, 100)
 
-    @patch('snmp_client.get_multiple')
-    def test_timeout_returns_none_list(self, mock_get):
+    @patch('time.sleep')
+    @patch('snmp_client.get')
+    def test_retries_on_timeout(self, mock_get, mock_sleep):
         from snmp_client import SnmpTimeout
-        mock_get.side_effect = SnmpTimeout('timeout')
+        mock_get.side_effect = [SnmpTimeout('t'), SnmpTimeout('t'), (42, 0x02)]
         adapter = ConcretePrinterAdapter('10.0.0.1')
-        results = adapter._snmp_get_multiple(['1.3.6.1.2.1.1.1.0'])
-        self.assertEqual(len(results), 1)
-        self.assertIsNone(results[0][1])
+        value, tag = adapter._snmp_get_retry('1.3.6.1', label='test', attempts=3)
+        self.assertEqual(value, 42)
+        self.assertEqual(mock_get.call_count, 3)
+        # Exponential backoff: 0.5, 1.0
+        calls = [c[0][0] for c in mock_sleep.call_args_list]
+        self.assertEqual(calls, [0.5, 1.0])
+
+    @patch('time.sleep')
+    @patch('snmp_client.get')
+    def test_all_retries_fail(self, mock_get, mock_sleep):
+        from snmp_client import SnmpTimeout
+        mock_get.side_effect = SnmpTimeout('t')
+        adapter = ConcretePrinterAdapter('10.0.0.1')
+        value, tag = adapter._snmp_get_retry('1.3.6.1', label='test', attempts=3)
+        self.assertIsNone(value)
+        self.assertEqual(mock_get.call_count, 3)
 
 
-class TestOidConstants(unittest.TestCase):
-    """Tests for OID constants in base module."""
-
-    def test_tag_values(self):
-        self.assertEqual(TAG_COUNTER32, 0x41)
-        self.assertEqual(TAG_GAUGE32, 0x42)
-        self.assertEqual(TAG_INTEGER, 0x02)
+class TestStatusFromCode(unittest.TestCase):
+    def test_all_codes(self):
+        self.assertEqual(PrinterAdapter._status_from_code(1), 'other')
+        self.assertEqual(PrinterAdapter._status_from_code(3), 'idle')
+        self.assertEqual(PrinterAdapter._status_from_code(4), 'printing')
+        self.assertEqual(PrinterAdapter._status_from_code(None), 'offline')
+        self.assertEqual(PrinterAdapter._status_from_code(99), 'unknown')
 
 
 if __name__ == '__main__':

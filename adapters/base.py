@@ -4,19 +4,14 @@ All printer adapters must implement this interface.
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
-from typing import Optional
-
-from snmp_client import TAG_COUNTER32, TAG_GAUGE32, TAG_INTEGER, TAG_OCTET_STRING
 
 
 class PrinterAdapter(ABC):
-    """Abstract adapter for querying a printer via SNMP.
+    """Abstract adapter for querying a printer via SNMP."""
 
-    Subclasses must implement get_counters() and define OIDS dict.
-    """
-
-    OIDS = {}  # Subclasses override this
+    OIDS = {}
 
     def __init__(self, ip, community='public', timeout_sec=5, retries=2,
                  version=0, **kwargs):
@@ -24,24 +19,11 @@ class PrinterAdapter(ABC):
         self.community = community
         self.timeout_sec = timeout_sec
         self.retries = retries
-        self.version = version  # 0=SNMPv1, 1=SNMPv2c
+        self.version = version
 
     @abstractmethod
     def get_counters(self) -> dict:
-        """Query the printer and return counters.
-
-        Returns:
-            dict with keys:
-                labels_total (int): Total labels printed (lifetime).
-                meters_total (float): Total media length printed (lifetime).
-                meter_unit (str): Unit for meters_total ('cm', 'mm', 'in', etc.).
-                model_name (str): Printer model from SNMP.
-                serial (str): Serial number.
-                status (str): Current status ('idle', 'printing', 'error', 'offline').
-                reachable (bool): Whether the printer responded.
-
-        On failure, returns dict with reachable=False and other fields as None/empty.
-        """
+        """Query the printer and return counters."""
         ...
 
     @abstractmethod
@@ -50,7 +32,7 @@ class PrinterAdapter(ABC):
         ...
 
     def _snmp_get(self, oid, label=None):
-        """Helper: single SNMP GET. Returns (value, type_tag) or (None, None)."""
+        """Single SNMP GET. Returns (value, type_tag) or (None, None)."""
         from snmp_client import get, SnmpTimeout, SnmpError
         tag = label or oid
         try:
@@ -64,48 +46,25 @@ class PrinterAdapter(ABC):
             )
             logging.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
             return value, type_tag
-        except SnmpTimeout as e:
-            logging.debug(f"  SNMP FAIL {self.ip} {oid} TIMEOUT  [{tag}]: {e}")
-            return None, None
-        except SnmpError as e:
-            logging.debug(f"  SNMP FAIL {self.ip} {oid} ERROR  [{tag}]: {e}")
+        except (SnmpTimeout, SnmpError) as e:
+            logging.debug(f"  SNMP FAIL {self.ip} {oid}  [{tag}]: {e}")
             return None, None
 
-    def _snmp_get_multiple(self, oids, label=None):
-        """Helper: fetch multiple OIDs via individual GETs."""
-        from snmp_client import get, SnmpTimeout, SnmpError
-        tag = label or f"multi({len(oids)})"
-
-        logging.debug(f"  SNMP GET  {self.ip} [{tag}] {len(oids)} oids")
-        results = []
-        for oid in oids:
-            try:
-                value, type_tag = get(
-                    self.ip, oid,
-                    community=self.community,
-                    timeout_sec=self.timeout_sec,
-                    retries=self.retries,
-                    version=self.version,
-                )
-                logging.debug(f"  SNMP RESP {self.ip} {oid} = {value!r} (tag=0x{type_tag:02x})  [{tag}]")
-                results.append((oid, value, type_tag))
-            except (SnmpTimeout, SnmpError) as e:
-                logging.debug(f"  SNMP FAIL {self.ip} {oid}  [{tag}]: {e}")
-                results.append((oid, None, None))
-        return results
+    def _snmp_get_retry(self, oid, label=None, attempts=3):
+        """SNMP GET with exponential backoff retry."""
+        for attempt in range(attempts):
+            value, type_tag = self._snmp_get(oid, label=label)
+            if value is not None:
+                return value, type_tag
+            if attempt < attempts - 1:
+                delay = 0.5 * (2 ** attempt)
+                logging.debug(f"  RETRY {self.ip} {label} attempt {attempt + 2}/{attempts} in {delay}s")
+                time.sleep(delay)
+        return None, None
 
     @staticmethod
     def _status_from_code(code):
-        """Convert hrPrinterStatus integer to string."""
         if code is None:
             return 'offline'
-        status_map = {
-            1: 'other',
-            2: 'unknown',
-            3: 'idle',
-            4: 'printing',
-            5: 'warmup',
-            6: 'stopping',
-            7: 'down',
-        }
-        return status_map.get(code, 'unknown')
+        return {1: 'other', 2: 'unknown', 3: 'idle', 4: 'printing',
+                5: 'warmup', 6: 'stopping', 7: 'down'}.get(code, 'unknown')

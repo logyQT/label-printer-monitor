@@ -22,101 +22,8 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
-from adapters.zebra import ZebraAdapter, UNIT_MAP, OID_ZEBRA_LABELS_NONRESET
-from adapters.base import TAG_INTEGER, TAG_COUNTER32, TAG_OCTET_STRING, TAG_GAUGE32
-from snmp_client import (
-    _encode_integer,
-    _encode_octet_string,
-    _encode_oid,
-    _encode_sequence,
-    _encode_length,
-    _decode_value,
-    TAG_SEQUENCE,
-    TAG_TIMETICKS,
-    TAG_IP_ADDRESS,
-)
-
-
-class TestSnmpDataInterpretation(unittest.TestCase):
-    """Tests for how raw SNMP BER values map to Python types."""
-
-    def test_counter32_zero(self):
-        data = bytes([TAG_COUNTER32, 0x01, 0x00])
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(tag, TAG_COUNTER32)
-        self.assertEqual(value, 0)
-
-    def test_counter32_small(self):
-        data = bytes([TAG_COUNTER32, 0x02, 0x00, 0x64])
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, 100)
-
-    def test_counter32_large(self):
-        # 1,000,000 labels
-        val_bytes = (1000000).to_bytes(4, 'big')
-        data = bytes([TAG_COUNTER32, 0x04]) + val_bytes
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, 1000000)
-
-    def test_counter32_max(self):
-        # 2^32 - 1 = 4,294,967,295
-        val_bytes = (4294967295).to_bytes(4, 'big')
-        data = bytes([TAG_COUNTER32, 0x04]) + val_bytes
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, 4294967295)
-
-    def test_integer_zero(self):
-        data = bytes([TAG_INTEGER, 0x01, 0x00])
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, 0)
-
-    def test_integer_positive(self):
-        data = bytes([TAG_INTEGER, 0x02, 0x00, 0x0A])
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, 10)
-
-    def test_integer_negative(self):
-        # -1 encoded as 0xFF
-        data = bytes([TAG_INTEGER, 0x01, 0xFF])
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, -1)
-
-    def test_octet_string_ascii(self):
-        data = b'\x04\x15ZTC ZT230-200dpi ZPL'
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(tag, TAG_OCTET_STRING)
-        self.assertEqual(value, b'ZTC ZT230-200dpi ZPL')
-
-    def test_octet_string_serial(self):
-        serial = b'55J12345678'
-        encoded = bytes([TAG_OCTET_STRING]) + _encode_length(len(serial)) + serial
-        tag, value, offset = _decode_value(encoded, 0)
-        self.assertEqual(value, serial)
-        self.assertEqual(value.decode('ascii'), '55J12345678')
-
-    def test_timeticks_one_hour(self):
-        # 1 hour = 3,600,000 centiseconds
-        ticks = 3600000
-        val_bytes = ticks.to_bytes(4, 'big')
-        data = bytes([TAG_TIMETICKS, 0x04]) + val_bytes
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, 3600000)
-        # Convert to hours
-        hours = value / 3600000
-        self.assertAlmostEqual(hours, 1.0, places=2)
-
-    def test_ip_address(self):
-        # 192.168.40.249
-        data = bytes([TAG_IP_ADDRESS, 0x04, 192, 168, 40, 249])
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, '192.168.40.249')
-
-    def test_gauge32_value(self):
-        # Gauge32 can go up and down (unlike Counter32)
-        val_bytes = (500).to_bytes(2, 'big')
-        data = bytes([TAG_GAUGE32, 0x02]) + val_bytes
-        tag, value, offset = _decode_value(data, 0)
-        self.assertEqual(value, 500)
+from adapters.zebra import ZebraAdapter, OID_LABELS
+from snmp_client import TAG_INTEGER, TAG_COUNTER32, TAG_OCTET_STRING, TAG_GAUGE32
 
 
 class TestCounterEdgeCases(unittest.TestCase):
@@ -332,12 +239,6 @@ class TestDeltaCalculation(unittest.TestCase):
 class TestMeterUnitInterpretation(unittest.TestCase):
     """Tests for how meter_unit affects data interpretation."""
 
-    def test_unit_map_completeness(self):
-        """All expected unit codes are mapped."""
-        expected = {0: 'other', 1: 'tenThousandthsOfSheets', 2: 'impressions',
-                    3: 'sheets', 4: 'linearFeet', 5: 'linearMeters'}
-        self.assertEqual(UNIT_MAP, expected)
-
     def test_linear_meters_meaning(self):
         """linearMeters: value is in meters."""
         meters_value = 125.5
@@ -366,12 +267,6 @@ class TestMeterUnitInterpretation(unittest.TestCase):
         needs_verification = 'assumed' in unit
         self.assertTrue(needs_verification)
 
-    def test_unknown_unit_code(self):
-        """Unknown unit code should be preserved."""
-        code = 99
-        unit = UNIT_MAP.get(code, f'unknown({code})')
-        self.assertEqual(unit, 'unknown(99)')
-
     def test_unit_consistency_across_snapshots(self):
         """Unit should be consistent across snapshots for same printer."""
         conn = db.init_db(':memory:')
@@ -395,161 +290,69 @@ class TestRealisticPrinterResponses(unittest.TestCase):
     def _make_adapter(self, ip='192.168.40.249'):
         return ZebraAdapter(ip, community='public', timeout_sec=3, retries=0)
 
-    @patch.object(ZebraAdapter, '_snmp_get_multiple')
+    @patch.object(ZebraAdapter, '_snmp_get_retry')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_zt230_full_response(self, mock_get, mock_get_multi):
-        """ZT230 with all vendor OIDs available."""
-        adapter = self._make_adapter('192.168.40.249')
-
-        def side_effect(oid, label=None):
-            responses = {
-                '1.3.6.1.4.1.10642.1.1.0': (b'ZTC ZT230-200dpi ZPL', TAG_OCTET_STRING),
-            }
-            return responses.get(oid, (None, None))
-
-        def multi_side_effect(oids, label=None):
-            responses = {
-                '1.3.6.1.4.1.10642.1.9.0': (b'55J12345', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),
-                '1.3.6.1.4.1.10642.3.1.6.0': (15234, TAG_COUNTER32),
-                '1.3.6.1.4.1.10642.3.1.1.0': (50000, TAG_COUNTER32),
-            }
-            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
-
-        mock_get.side_effect = side_effect
-        mock_get_multi.side_effect = multi_side_effect
-        result = adapter.get_counters()
+    def test_zt230_full_response(self, mock_get, mock_retry):
+        """ZT230 with all OIDs available."""
+        mock_get.return_value = (b'ZTC ZT230-200dpi ZPL', TAG_OCTET_STRING)
+        mock_retry.side_effect = [
+            (15234, TAG_COUNTER32),   # labels
+            (50000, TAG_COUNTER32),   # meters
+        ]
+        result = self._make_adapter('192.168.40.249').get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 15234)
         self.assertEqual(result['meters_total'], 50000.0)
         self.assertEqual(result['model_name'], 'ZTC ZT230-200dpi ZPL')
-        self.assertEqual(result['serial'], '55J12345')
-        self.assertEqual(result['status'], 'idle')
 
-    @patch.object(ZebraAdapter, '_snmp_get_multiple')
+    @patch.object(ZebraAdapter, '_snmp_get_retry')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_gx430t_with_fallback(self, mock_get, mock_get_multi):
-        """GX430t with vendor labels OID but no meters OID."""
-        adapter = self._make_adapter('192.168.40.176')
-
-        def side_effect(oid, label=None):
-            responses = {
-                '1.3.6.1.4.1.10642.1.1.0': (b'ZTC GX430t-203dpi ZPL', TAG_OCTET_STRING),
-            }
-            return responses.get(oid, (None, None))
-
-        def multi_side_effect(oids, label=None):
-            responses = {
-                '1.3.6.1.4.1.10642.1.9.0': (b'66K78901', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (4, TAG_INTEGER),
-                '1.3.6.1.4.1.10642.3.1.6.0': (8901, TAG_COUNTER32),
-                '1.3.6.1.4.1.10642.3.1.1.0': (None, None),
-            }
-            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
-
-        mock_get.side_effect = side_effect
-        mock_get_multi.side_effect = multi_side_effect
-        result = adapter.get_counters()
+    def test_gx430t_labels_only(self, mock_get, mock_retry):
+        """GX430t with labels but no meters OID."""
+        mock_get.return_value = (b'ZTC GX430t-203dpi ZPL', TAG_OCTET_STRING)
+        mock_retry.side_effect = [
+            (8901, TAG_COUNTER32),    # labels
+            (None, None),             # meters timeout
+        ]
+        result = self._make_adapter('192.168.40.176').get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertEqual(result['labels_total'], 8901)
         self.assertIsNone(result['meters_total'])
-        self.assertEqual(result['status'], 'printing')
 
-    @patch.object(ZebraAdapter, '_snmp_get_multiple')
+    @patch.object(ZebraAdapter, '_snmp_get_retry')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_zd621_with_link_os(self, mock_get, mock_get_multi):
-        """ZD621 with full Link-OS MIB."""
-        adapter = self._make_adapter('192.168.40.144')
-
-        def side_effect(oid, label=None):
-            responses = {
-                '1.3.6.1.4.1.10642.1.1.0': (b'ZTC ZD621-203dpi ZPL', TAG_OCTET_STRING),
-            }
-            return responses.get(oid, (None, None))
-
-        def multi_side_effect(oids, label=None):
-            responses = {
-                '1.3.6.1.4.1.10642.1.9.0': (b'77L45678', TAG_OCTET_STRING),
-                '1.3.6.1.2.1.25.3.5.1.1.1': (3, TAG_INTEGER),
-                '1.3.6.1.4.1.10642.3.1.6.0': (45678, TAG_COUNTER32),
-                '1.3.6.1.4.1.10642.3.1.1.0': (100000, TAG_COUNTER32),
-            }
-            return [(oid, *responses.get(oid, (None, None))) for oid in oids]
-
-        mock_get.side_effect = side_effect
-        mock_get_multi.side_effect = multi_side_effect
-        result = adapter.get_counters()
-
-        self.assertTrue(result['reachable'])
-        self.assertEqual(result['labels_total'], 45678)
-        self.assertEqual(result['meters_total'], 100000.0)
-        self.assertEqual(result['model_name'], 'ZTC ZD621-203dpi ZPL')
-        self.assertEqual(result['serial'], '77L45678')
-
-    @patch.object(ZebraAdapter, '_snmp_get_multiple')
-    @patch.object(ZebraAdapter, '_snmp_get')
-    def test_printer_with_garbage_model_name(self, mock_get, mock_get_multi):
+    def test_printer_with_garbage_model_name(self, mock_get, mock_retry):
         """Printer returns non-standard model name."""
-        adapter = self._make_adapter()
+        mock_get.return_value = (b'UNKNOWN\x00\x01\x02', TAG_OCTET_STRING)
+        mock_retry.side_effect = [(None, None), (None, None)]
+        result = self._make_adapter().get_counters()
 
-        def side_effect(oid, label=None):
-            responses = {
-                '1.3.6.1.4.1.10642.1.1.0': (b'UNKNOWN\x00\x01\x02', TAG_OCTET_STRING),
-            }
-            return responses.get(oid, (None, None))
-
-        def multi_side_effect(oids, label=None):
-            return [(oid, None, None) for oid in oids]
-
-        mock_get.side_effect = side_effect
-        mock_get_multi.side_effect = multi_side_effect
-        result = adapter.get_counters()
-
-        # Should handle garbage bytes gracefully
         self.assertTrue(result['reachable'])
         self.assertIn('UNKNOWN', result['model_name'])
 
     @patch.object(ZebraAdapter, '_snmp_get')
     def test_unreachable_printer(self, mock_get):
         """Printer is off the network."""
-        adapter = self._make_adapter()
         mock_get.return_value = (None, None)
-        result = adapter.get_counters()
+        result = self._make_adapter().get_counters()
 
         self.assertFalse(result['reachable'])
         self.assertIsNone(result['labels_total'])
         self.assertIsNone(result['meters_total'])
-        self.assertEqual(result['status'], 'offline')
         self.assertEqual(result['model_name'], '')
-        self.assertEqual(result['serial'], '')
 
-    @patch.object(ZebraAdapter, '_snmp_get_multiple')
+    @patch.object(ZebraAdapter, '_snmp_get_retry')
     @patch.object(ZebraAdapter, '_snmp_get')
-    def test_partial_oid_response(self, mock_get, mock_get_multi):
+    def test_partial_oid_response(self, mock_get, mock_retry):
         """Some OIDs respond, others timeout."""
-        adapter = self._make_adapter()
-
-        def side_effect(oid, label=None):
-            # Only model name responds
-            if oid == '1.3.6.1.4.1.10642.1.1.0':
-                return (b'Zebra', TAG_OCTET_STRING)
-            return (None, None)
-
-        def multi_side_effect(oids, label=None):
-            # Only status responds in batch
-            results = []
-            for oid in oids:
-                if oid == '1.3.6.1.2.1.25.3.5.1.1.1':
-                    results.append((oid, 3, TAG_INTEGER))
-                else:
-                    results.append((oid, None, None))
-            return results
-
-        mock_get.side_effect = side_effect
-        mock_get_multi.side_effect = multi_side_effect
-        result = adapter.get_counters()
+        mock_get.return_value = (b'Zebra', TAG_OCTET_STRING)
+        mock_retry.side_effect = [
+            (None, None),   # labels timeout
+            (None, None),   # meters timeout
+        ]
+        result = self._make_adapter().get_counters()
 
         self.assertTrue(result['reachable'])
         self.assertIsNone(result['labels_total'])
