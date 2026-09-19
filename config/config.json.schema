@@ -31,7 +31,7 @@
       "properties": {
         "community": {
           "type": "string",
-          "description": "SNMP v2c community string",
+          "description": "SNMP v1/v2c community string (the shared secret; SNMPv3 uses a username instead)",
           "default": "public"
         },
         "timeout_sec": {
