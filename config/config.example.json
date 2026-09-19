@@ -9,6 +9,9 @@
     "timeout_sec": 3,
     "retries": 2
   },
+  "collection": {
+    "max_concurrency": 20
+  },
   "printers": [
     { "ip": "10.0.1.10", "model": "Sato CL4NX Plus", "location": "Linia 1" },
     { "ip": "10.0.1.11", "model": "Zebra ZT411", "location": "Linia 2" },

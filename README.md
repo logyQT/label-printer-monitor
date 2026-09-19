@@ -41,6 +41,9 @@ Then edit `config/config.json` with your printers:
     "timeout_sec": 3,
     "retries": 2
   },
+  "collection": {
+    "max_concurrency": 20
+  },
   "printers": [
     { "ip": "10.0.1.10", "model": "Sato CL4NX Plus", "location": "Linia 1" },
     { "ip": "10.0.1.11", "model": "Zebra ZT411", "location": "Linia 2" },
@@ -48,6 +51,16 @@ Then edit `config/config.json` with your printers:
   ]
 }
 ```
+
+`collection.max_concurrency` (default 20) caps how many printers are polled at
+once — used by both `--collect` and `--validate --network`. Printers are
+checked in parallel, so a dead printer's SNMP timeout no longer stalls the rest
+of the fleet; healthy printers report back immediately while only a few workers
+wait on the unresponsive ones.
+
+Every command accepts `--config <path>` to read a different config file, e.g.
+`python main.py --collect --config other-config.json` — for testing alternate
+setups without touching the default `config/config.json`.
 
 ## Usage
 

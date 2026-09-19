@@ -149,6 +149,57 @@ class TestRunCollection(unittest.TestCase):
         self.assertEqual(success, 0)
         self.assertEqual(fail, 1)
 
+    @patch('main.create_adapter')
+    def test_mixed_success_and_config_error(self, mock_create):
+        """A config error (unknown model) on one printer doesn't affect the rest."""
+        adapter = MagicMock()
+        adapter.get_counters.return_value = {
+            'labels_total': 100,
+            'meters_total': 50.0,
+            'meter_unit': 'cm',
+            'model_name': 'Zebra ZT230',
+            'reachable': True,
+        }
+
+        def fake_create(model, ip, **kwargs):
+            if model == 'No Such Model':
+                raise ValueError(f'Unknown model: {model}')
+            return adapter
+
+        mock_create.side_effect = fake_create
+        self.config['printers'] = [
+            {'ip': '10.0.0.1', 'model': 'Zebra ZT230', 'location': 'Line 1'},
+            {'ip': '10.0.0.2', 'model': 'No Such Model', 'location': 'Line 2'},
+        ]
+        success, fail, total = main.run_collection(self.config)
+        self.assertEqual((success, fail, total), (1, 1, 2))
+
+    def test_honors_max_concurrency(self):
+        """max_concurrency from the collection config section is applied."""
+        from concurrent.futures import ThreadPoolExecutor as RealTPE
+        captured = {}
+
+        def fake_tpe(max_workers=None, **kwargs):
+            captured['max_workers'] = max_workers
+            return RealTPE(max_workers=max_workers)
+
+        adapter = MagicMock()
+        adapter.get_counters.return_value = {
+            'labels_total': 100,
+            'meters_total': 50.0,
+            'meter_unit': 'cm',
+            'model_name': 'Zebra ZT230',
+            'reachable': True,
+        }
+        self.config['collection'] = {'max_concurrency': 5}
+        with patch('main.create_adapter', return_value=adapter), \
+             patch('main.concurrent.futures.ThreadPoolExecutor',
+                   side_effect=fake_tpe):
+            success, fail, total = main.run_collection(self.config)
+
+        self.assertEqual(captured.get('max_workers'), 5)
+        self.assertEqual((success, fail, total), (1, 0, 1))
+
 
 if __name__ == '__main__':
     unittest.main()

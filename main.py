@@ -4,6 +4,7 @@ Usage:
     python main.py --init                   # create config from the example
     python main.py --collect                # collect from all printers
     python main.py --collect --verbose      # with SNMP debug output
+    python main.py --collect --config path/to/config.json  # alternate config
     python main.py --report                 # weekly report (current week)
     python main.py --report --from 2026-09-01 --to 2026-09-30
     python main.py --report --csv           # export CSV
@@ -14,6 +15,7 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import os
@@ -61,8 +63,8 @@ def _backups_dir():
 
 # ── helpers ──────────────────────────────────────────────────────────
 
-def load_config():
-    path = _config_path()
+def load_config(path=None):
+    path = path or _config_path()
     if not os.path.exists(path):
         print(f'ERROR: Config file not found: {path}', file=sys.stderr)
         sys.exit(2)
@@ -74,14 +76,14 @@ def load_config():
         sys.exit(2)
 
 
-def backup_data():
+def backup_data(config_path=None):
     """Snapshot config + db into data/backups/<timestamp>/ before a run."""
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     dest = os.path.join(_backups_dir(), ts)
     os.makedirs(dest, exist_ok=True)
 
     # Backup config
-    src = _config_path()
+    src = config_path or _config_path()
     if os.path.exists(src):
         shutil.copy2(src, os.path.join(dest, 'config.json'))
 
@@ -188,6 +190,22 @@ def collect_printer(adapter, printer_cfg):
         return None
 
 
+def _collect_one(printer_cfg, community, timeout, retries):
+    """Collect counters from a single printer (runs in a worker thread).
+
+    Returns a counters dict, or None when the printer is unreachable or the
+    query fails. Raises on config errors (e.g. unknown model) so the caller
+    can count them as failures.
+    """
+    adapter = create_adapter(
+        printer_cfg['model'], printer_cfg['ip'],
+        community=community,
+        timeout_sec=timeout,
+        retries=retries,
+    )
+    return collect_printer(adapter, printer_cfg)
+
+
 def run_collection(config):
     db_path = _db_path(config)
     conn = db.init_db(db_path)
@@ -195,26 +213,43 @@ def run_collection(config):
     community = snmp_config.get('community', 'public')
     timeout = snmp_config.get('timeout_sec', 3)
     retries = snmp_config.get('retries', 2)
+    max_concurrency = max(
+        1, int(config.get('collection', {}).get('max_concurrency', 20))
+    )
 
     success = 0
     fail = 0
     total = len(config['printers'])
 
-    log.info(f"Starting collection for {total} printers")
+    log.info(f"Starting collection for {total} printers "
+             f"(max concurrency: {max_concurrency})")
 
-    for printer_cfg in config['printers']:
-        ip = printer_cfg['ip']
-        model = printer_cfg['model']
-        location = printer_cfg['location']
+    # Collect all printers in parallel so a dead printer's timeout doesn't
+    # stall the rest. DB writes stay on the main thread because sqlite3
+    # connections are not safe to share across threads.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        futures = {
+            executor.submit(
+                _collect_one, printer_cfg, community, timeout, retries
+            ): printer_cfg
+            for printer_cfg in config['printers']
+        }
+        for future in concurrent.futures.as_completed(futures):
+            printer_cfg = futures[future]
+            ip = printer_cfg['ip']
+            model = printer_cfg['model']
+            location = printer_cfg['location']
 
-        try:
-            adapter = create_adapter(
-                model, ip,
-                community=community,
-                timeout_sec=timeout,
-                retries=retries,
-            )
-            counters = collect_printer(adapter, printer_cfg)
+            try:
+                counters = future.result()
+            except ValueError as e:
+                log.error(f"Config error for {ip}: {e}")
+                fail += 1
+                continue
+            except Exception as e:
+                log.error(f"Unexpected error for {ip}: {e}")
+                fail += 1
+                continue
 
             if counters is None:
                 fail += 1
@@ -239,21 +274,14 @@ def run_collection(config):
                 f"labels: {labels_str}, odometer: {meters_str}"
             )
 
-        except ValueError as e:
-            log.error(f"Config error for {ip}: {e}")
-            fail += 1
-        except Exception as e:
-            log.error(f"Unexpected error for {ip}: {e}")
-            fail += 1
-
     db.close_db(conn)
     log.info(f"Collection complete: {success}/{total} success, {fail}/{total} failed")
     return success, fail, total
 
 
 def _handle_collect(args):
-    config = load_config()
-    backup_data()
+    config = load_config(args.config)
+    backup_data(args.config)
     log_dir = os.path.join(_project_root(), config.get('log_dir', 'logs'))
     log_file = setup_logging(log_dir, verbose=args.verbose)
     log.info(f"Log file: {log_file}")
@@ -265,13 +293,13 @@ def _handle_collect(args):
 def _handle_validate(args):
     from validate import validate_setup, validate_network
 
-    config_path = _config_path()
+    config_path = args.config or _config_path()
 
     issues = validate_setup(config_path, _HERE)
 
     if args.network:
         try:
-            issues += validate_network(load_config())
+            issues += validate_network(load_config(args.config))
         except SystemExit:
             pass  # config missing – the setup issues already say so
 
@@ -290,8 +318,8 @@ def _handle_validate(args):
 def _handle_report(args):
     from report import compute_weekly, print_report, export_csv
 
-    config = load_config()
-    backup_data()
+    config = load_config(args.config)
+    backup_data(args.config)
     from_date = args.from_date or datetime.now().strftime('%Y-%m-%d')
     to_date = args.to_date or datetime.now().strftime('%Y-%m-%d')
 
@@ -326,7 +354,7 @@ def _handle_test():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Printer statistics – collect & report',
+        description='Printer statistics - collect & report',
         epilog='Run with no flags to see this help message.',
     )
 
@@ -345,6 +373,11 @@ def main():
     # Collect-specific flags
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='(collect) Show detailed SNMP debug output')
+
+    # Config selection (all modes)
+    parser.add_argument('--config',
+                        help='Path to a config JSON file '
+                             '(default: config/config.json)')
 
     # Report-specific flags
     parser.add_argument('--from', dest='from_date',

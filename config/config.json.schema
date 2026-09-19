@@ -50,6 +50,18 @@
         }
       }
     },
+    "collection": {
+      "type": "object",
+      "description": "Collection run settings",
+      "properties": {
+        "max_concurrency": {
+          "type": "integer",
+          "description": "Maximum number of printers collected in parallel",
+          "minimum": 1,
+          "default": 20
+        }
+      }
+    },
     "shifts": {
       "type": "array",
       "description": "Work shift definitions",

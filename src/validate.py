@@ -5,9 +5,11 @@ printer/adapters, runtime dirs, database) and validate_network() for optional
 live SNMP reachability checks against each configured printer.
 """
 
+import concurrent.futures
 import json
 import os
 from collections import namedtuple
+from functools import partial
 
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import best_match
@@ -143,32 +145,50 @@ def _summarize(issues):
     return sorted(issues, key=lambda i: order[i.level])
 
 
+def _network_check_one(printer, community, timeout_sec, retries):
+    """Check SNMP reachability of one printer; returns an Issue (never raises)."""
+    ip = printer['ip']
+    model = printer['model']
+    try:
+        adapter = get_adapter_class(model)(
+            ip=ip, community=community,
+            timeout_sec=timeout_sec, retries=retries)
+        if adapter.is_reachable():
+            return Issue(OK, f'SNMP reachable: {model} ({ip})')
+        return Issue(WARN, f'SNMP NOT reachable: {model} ({ip}) - '
+                           f'check network, community "{community}", port 161')
+    except Exception as e:
+        return Issue(WARN, f'SNMP check failed for {model} ({ip}): {e}')
+
+
 def validate_network(config):
     """Live SNMP reachability check for each configured printer.
+
+    Checks run in parallel (collection.max_concurrency, default 20) so a
+    dead printer's SNMP timeout doesn't stall checks for the rest of the
+    fleet. Issues retain printer config order.
 
     Returns:
         list of Issue namedtuples. Unreachable printers are WARN (the check
         depends on the live network, not the project setup).
     """
-    issues = []
     snmp = config.get('snmp', {})
     community = snmp.get('community', 'public')
     timeout = snmp.get('timeout_sec', 3)
     retries = snmp.get('retries', 2)
+    printers = list(config.get('printers', []))
+    if not printers:
+        return []
 
-    for p in config.get('printers', []):
-        ip = p['ip']
-        model = p['model']
-        try:
-            adapter = get_adapter_class(model)(
-                ip=ip, community=community,
-                timeout_sec=timeout, retries=retries)
-            if adapter.is_reachable():
-                issues.append(Issue(OK, f'SNMP reachable: {model} ({ip})'))
-            else:
-                issues.append(Issue(WARN, f'SNMP NOT reachable: {model} ({ip}) - '
-                                          f'check network, community "{community}", port 161'))
-        except Exception as e:
-            issues.append(Issue(WARN, f'SNMP check failed for {model} ({ip}): {e}'))
+    max_concurrency = max(
+        1, int(config.get('collection', {}).get('max_concurrency', 20))
+    )
 
-    return issues
+    check_one = partial(
+        _network_check_one,
+        community=community,
+        timeout_sec=timeout,
+        retries=retries,
+    )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        return list(executor.map(check_one, printers))
