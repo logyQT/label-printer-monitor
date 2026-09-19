@@ -2,9 +2,11 @@
 
 Uses vendor OIDs under enterprise 10642.
 Labels + meters (cm) confirmed on ZT411.
+
+Declarative specification - see adapters.base for the engine.
 """
 
-from adapters.base import PrinterAdapter
+from adapters.base import PrinterAdapter, Metric
 
 
 OID_REACHABILITY = '1.3.6.1.4.1.10642.1.1.0'  # model name
@@ -14,37 +16,10 @@ OID_METERS = '1.3.6.1.4.1.10642.3.1.1.0'        # centimeters NONRESET
 
 class ZebraZT411Adapter(PrinterAdapter):
 
-    OIDS = {'labels_total': OID_LABELS}
-
-    def __init__(self, ip, community='public', timeout_sec=5, retries=2,
-                 version=1, **kwargs):
-        super().__init__(ip, community, timeout_sec, retries, version, **kwargs)
-
-    def get_counters(self) -> dict:
-        result = {
-            'labels_total': None, 'meters_total': None, 'meter_unit': 'unknown',
-            'model_name': '', 'reachable': False,
-        }
-
-        model, _ = self._snmp_get(OID_REACHABILITY, label='poke')
-        if model is None:
-            return result
-        result['reachable'] = True
-        if isinstance(model, bytes):
-            model = model.decode('ascii', errors='replace')
-        result['model_name'] = model or ''
-
-        labels, _ = self._snmp_get_retry(OID_LABELS, label='labels')
-        if labels is not None:
-            result['labels_total'] = int(labels)
-
-        cm, _ = self._snmp_get_retry(OID_METERS, label='meters')
-        if cm is not None:
-            result['meters_total'] = float(cm)
-            result['meter_unit'] = 'cm'
-
-        return result
-
-    def is_reachable(self) -> bool:
-        model, _ = self._snmp_get(OID_REACHABILITY)
-        return model is not None
+    model_prefixes = ('zebra zt411',)
+    snmp_version = 1
+    reachability_oid = OID_REACHABILITY
+    metrics = (
+        Metric('labels_total', oid=OID_LABELS, convert='int', label='labels'),
+        Metric('meters_total', oid=OID_METERS, convert='float', unit='cm', label='meters'),
+    )

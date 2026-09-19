@@ -162,7 +162,7 @@ def validate_network(config):
         try:
             adapter = get_adapter_class(model)(
                 ip=ip, community=community,
-                timeout_sec=timeout, retries=retries, version=0)
+                timeout_sec=timeout, retries=retries)
             if adapter.is_reachable():
                 issues.append(Issue(OK, f'SNMP reachable: {model} ({ip})'))
             else:

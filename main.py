@@ -213,7 +213,6 @@ def run_collection(config):
                 community=community,
                 timeout_sec=timeout,
                 retries=retries,
-                version=0,
             )
             counters = collect_printer(adapter, printer_cfg)
 

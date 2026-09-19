@@ -30,9 +30,9 @@ class TestZebraGX430tAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         self.assertEqual(adapter.version, 0)
 
-    def test_oids_empty(self):
-        """GX430t has no counter OIDs (poke only)."""
-        self.assertEqual(ZebraGX430tAdapter.OIDS, {})
+    def test_oids_derived_from_metrics(self):
+        """OIDS is derived from the declared metrics (meters_total only)."""
+        self.assertEqual(ZebraGX430tAdapter.OIDS, {'meters_total': OID_TOTAL_USAGE})
 
     def test_oid_reachability_defined(self):
         """Module-level OID_REACHABILITY should be defined."""

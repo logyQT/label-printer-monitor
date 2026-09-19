@@ -4,11 +4,11 @@ from adapters.zebra_zt411 import ZebraZT411Adapter
 from adapters.zebra_gx430t import ZebraGX430tAdapter
 from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
 
-ADAPTER_REGISTRY = {
-    'zebra zt411': ZebraZT411Adapter,
-    'zebra gx430t': ZebraGX430tAdapter,
-    'sato cl4nx plus': SatoCL4NXPlusAdapter,
-}
+ADAPTER_CLASSES = (ZebraZT411Adapter, ZebraGX430tAdapter, SatoCL4NXPlusAdapter)
+
+# Backward-compat alias: model prefix -> adapter class, derived from the
+# model_prefixes each adapter declares.
+ADAPTER_REGISTRY = {prefix: cls for cls in ADAPTER_CLASSES for prefix in cls.model_prefixes}
 
 
 def get_adapter_class(model):
@@ -24,15 +24,19 @@ def get_adapter_class(model):
         ValueError: No adapter found for the model.
     """
     model_lower = model.lower()
-    for prefix, adapter_cls in ADAPTER_REGISTRY.items():
-        if model_lower.startswith(prefix):
-            return adapter_cls
+    for cls in ADAPTER_CLASSES:
+        if any(model_lower.startswith(prefix) for prefix in cls.model_prefixes):
+            return cls
     raise ValueError(f'No adapter found for model: {model}')
 
 
 def create_adapter(model, ip, community='public', timeout_sec=5, retries=2,
-                   version=0, **kwargs):
-    """Create an adapter instance for the given model and IP."""
+                   version=None, **kwargs):
+    """Create an adapter instance for the given model and IP.
+
+    The SNMP version is the adapter's own choice (snmp_version) unless an
+    explicit version is passed.
+    """
     cls = get_adapter_class(model)
     return cls(ip=ip, community=community, timeout_sec=timeout_sec,
                retries=retries, version=version, **kwargs)

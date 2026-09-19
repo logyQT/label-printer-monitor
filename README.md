@@ -116,13 +116,43 @@ Register-ScheduledTask -TaskName "PrinterStatsPM" -Action $action -Trigger $trig
 | Printer | Labels | Odometer |
 |---------|--------|----------|
 | Zebra ZT411 | yes | yes (cm -> m) |
-| Zebra GX430t | - | yes (in -> m) |
+| Zebra GX430t | - | yes (cm -> m, in fallback) |
 | Sato CL4NX Plus | - | yes (m) |
 
 - Zebra ZT411: vendor OIDs under enterprise 10642
-- Zebra GX430t: usage string from 10642.200.17.7.0
+- Zebra GX430t: usage string from 10642.200.17.7.0 - centimeters preferred, inches only as fallback
 - Sato: standard Printer MIB (RFC 3805)
 - Sato does not expose label counts via SNMP
+
+## Adding a new printer adapter
+
+An adapter is a declarative class: it lists which OIDs to read and how to
+convert them. Copy one of the files in `src/adapters/` and declare the specs:
+
+```python
+from adapters.base import PrinterAdapter, Metric
+
+class ZebraZD621Adapter(PrinterAdapter):
+    model_prefixes = ('zebra zd621',)          # model strings this adapter serves
+    snmp_version = 1                           # 0 = SNMPv1, 1 = SNMPv2c
+    reachability_oid = '1.3.6.1.4.1.10642.1.1.0'  # poke OID (model name)
+    metrics = (
+        Metric('labels_total', oid='1.3.6.1.4.1.10642.3.1.6.0', convert='int'),
+        Metric('meters_total', oid='1.3.6.1.4.1.10642.3.1.1.0', convert='float',
+               unit='cm'),
+    )
+```
+
+`convert` accepts `'int'`, `'float'`, `'str'` (bytes-decoding), a
+`('regex', ...)` usage-string parser, a `('map', ...)` unit-code table, or any
+callable. The base class then handles the rest automatically: reachability
+(`reachability_oid`), the metric loop, backoff retries, and the standard
+`get_counters()` result (`labels_total`, `meters_total`, `meter_unit`,
+`model_name`, `reachable`).
+
+Then register the class in `src/adapters/__init__.py` (`ADAPTER_CLASSES`) and
+add the model to the `model` enum in `config/config.json.schema` so
+`--validate` knows about it.
 
 ## Database
 
@@ -152,10 +182,10 @@ data/
 logs/                   # per-run log files (gitignored)
 src/
   adapters/
-    __init__.py         # adapter registry
-    base.py             # abstract adapter with SNMP helpers
+    __init__.py         # adapter registry (ADAPTER_CLASSES, prefix matching)
+    base.py             # declarative adapter engine (Metric, converters)
     zebra_zt411.py      # Zebra ZT411 (labels + meters)
-    zebra_gx430t.py     # Zebra GX430t (meters only)
+    zebra_gx430t.py     # Zebra GX430t (meters only, usage string)
     sato_cl4nx_plus.py  # Sato CL4NX Plus (meters only, built-in unit map)
   _tests_/              # unit tests
   db.py                 # SQLite storage layer

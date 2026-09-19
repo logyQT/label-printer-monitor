@@ -41,9 +41,9 @@ class TestSatoCL4NXPlusAdapter(unittest.TestCase):
         self.assertEqual(OID_UNIT, '1.3.6.1.2.1.43.10.2.1.3.1.1')
 
     def test_class_oids(self):
-        """Class OIDS dict should contain model_name and meters_total."""
-        self.assertIn('model_name', SatoCL4NXPlusAdapter.OIDS)
+        """Class OIDS dict should contain meters_total and meter_unit."""
         self.assertIn('meters_total', SatoCL4NXPlusAdapter.OIDS)
+        self.assertIn('meter_unit', SatoCL4NXPlusAdapter.OIDS)
 
     def test_unit_map_is_populated(self):
         """UNIT_MAP should contain known Sato unit codes."""

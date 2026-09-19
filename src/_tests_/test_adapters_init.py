@@ -14,7 +14,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters import get_adapter_class, create_adapter, ADAPTER_REGISTRY
+from adapters import get_adapter_class, create_adapter, ADAPTER_REGISTRY, ADAPTER_CLASSES
 from adapters.zebra_zt411 import ZebraZT411Adapter
 from adapters.zebra_gx430t import ZebraGX430tAdapter
 from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
@@ -26,8 +26,10 @@ class TestAdapterRegistry(unittest.TestCase):
     def test_registry_not_empty(self):
         self.assertGreater(len(ADAPTER_REGISTRY), 0)
 
-    def test_registry_has_three_entries(self):
-        self.assertEqual(len(ADAPTER_REGISTRY), 3)
+    def test_registry_matches_declared_prefixes(self):
+        """Registry is exactly what the adapter classes declare - no drift."""
+        expected = {p: cls for cls in ADAPTER_CLASSES for p in cls.model_prefixes}
+        self.assertEqual(ADAPTER_REGISTRY, expected)
 
     def test_zebra_zt411_registered(self):
         self.assertIn('zebra zt411', ADAPTER_REGISTRY)
