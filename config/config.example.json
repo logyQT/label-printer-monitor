@@ -1,4 +1,5 @@
 {
+  "$schema": "./config.json.schema",
   "db": {
     "filename": "printer_stats.db"
   },

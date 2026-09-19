@@ -24,6 +24,10 @@ python main.py --init    # recommended: copies example -> config + creates data/
 (Or copy `config/config.example.json` to `config/config.json` by hand with your platform's
 copy command, then edit.)
 
+The config links to its schema via a `$schema` key, so editors with JSON Schema support
+(VS Code, IntelliJ, etc.) validate and autocomplete it; `python main.py --validate` uses
+the same link when choosing which schema to check against.
+
 Then edit `config/config.json` with your printers:
 
 ```json

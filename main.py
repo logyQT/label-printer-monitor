@@ -129,6 +129,8 @@ def setup_logging(log_dir, verbose=False):
 
 def _handle_init():
     """Bootstrap the project: create config from the example + runtime dirs."""
+    from validate import find_schema_violation, resolve_schema_path
+
     example = os.path.join(_HERE, 'config', 'config.example.json')
     target = _config_path()
 
@@ -151,7 +153,24 @@ def _handle_init():
 
     print(f'Created {target}')
     print('Created runtime directories: data/, data/backups/, logs/')
+
+    # The copied config carries a $schema link - confirm it validates
+    schema_path = resolve_schema_path(target)
+    try:
+        with open(target, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        with open(schema_path, 'r', encoding='utf-8') as f:
+            schema = json.load(f)
+        violation = find_schema_violation(cfg, schema)
+        if violation:
+            print(f'WARNING: copied config does not match schema: {violation.message}')
+        else:
+            print(f'Config validates against {os.path.basename(schema_path)}')
+    except Exception as e:
+        print(f'WARNING: could not validate copied config: {e}')
+
     print('Edit config/config.json with your printers, then run:')
+    print('  python main.py --validate  # check everything is set up')
     print('  python main.py --collect')
 
 
@@ -248,9 +267,8 @@ def _handle_validate(args):
     from validate import validate_setup, validate_network
 
     config_path = _config_path()
-    schema_path = os.path.join(_HERE, 'config', 'config.json.schema')
 
-    issues = validate_setup(config_path, schema_path, _HERE)
+    issues = validate_setup(config_path, _HERE)
 
     if args.network:
         try:

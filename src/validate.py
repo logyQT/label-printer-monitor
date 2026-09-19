@@ -31,8 +31,44 @@ def _load_json(path, label):
         return None, Issue(FAIL, f'{label} is not valid JSON: {e}')
 
 
-def validate_setup(config_path, schema_path, project_root, db_path=None):
+def find_schema_violation(config, schema):
+    """Return the single best schema violation for a config, or None if valid."""
+    validator = Draft7Validator(schema)
+    return best_match(validator.iter_errors(config))
+
+
+def resolve_schema_path(config_path, default=None):
+    """Pick the file to validate a config against.
+
+    Prefers the config's own '$schema' link when it points at a local file;
+    otherwise falls back to the default schema next to the config.
+    """
+    if default is None:
+        default = os.path.join(os.path.dirname(config_path), 'config.json.schema')
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            link = json.load(f).get('$schema')
+    except Exception:
+        return default
+    if not link:
+        return default
+    # Skip remote/absolute links - we can only validate against local files
+    if (link.startswith(('http://', 'https://', 'file://', '/', '\\'))
+            or len(link) > 1 and link[1] == ':'):
+        return default
+    candidate = os.path.join(os.path.dirname(config_path), link)
+    return candidate if os.path.isfile(candidate) else default
+
+
+def validate_setup(config_path, project_root, schema_path=None, db_path=None):
     """Run local validation checks.
+
+    Args:
+        config_path: Path to config.json.
+        project_root: Project root (for runtime dir checks).
+        schema_path: Schema file to validate against. When None, the config's
+            '$schema' link is resolved and used, falling back to the default.
+        db_path: Database path to test. Defaults to data/<filename> from config.
 
     Returns:
         list of Issue namedtuples (levels: OK / WARN / FAIL).
@@ -46,13 +82,13 @@ def validate_setup(config_path, schema_path, project_root, db_path=None):
 
     issues.append(Issue(OK, f'Config file found and valid JSON: {config_path}'))
 
-    # 2. Validates against the JSON Schema
+    # 2. Validates against the JSON Schema (honoring the config's $schema link)
+    schema_path = resolve_schema_path(config_path, schema_path)
     schema, err = _load_json(schema_path, 'Config schema')
     if err:
         issues.append(err)  # schema ships with repo, so this is a repo problem
     else:
-        validator = Draft7Validator(schema)
-        match = best_match(validator.iter_errors(config))
+        match = find_schema_violation(config, schema)
         if match:
             issues.append(Issue(FAIL, f'Config does not match {os.path.basename(schema_path)}: '
                                       f'{match.message} (at {".".join(str(p) for p in match.path) or "<root>"})'))
