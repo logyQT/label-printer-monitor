@@ -1,12 +1,15 @@
 """Printer statistics collection & reporting entry point.
 
 Usage:
+    python main.py --init                   # create config from the example
     python main.py --collect                # collect from all printers
     python main.py --collect --verbose      # with SNMP debug output
     python main.py --report                 # weekly report (current week)
     python main.py --report --from 2026-09-01 --to 2026-09-30
     python main.py --report --csv           # export CSV
     python main.py --test                   # run all tests
+    python main.py --validate               # check that everything is set up
+    python main.py --validate --network     # also check SNMP reachability
     python main.py                          # show this help
 """
 
@@ -122,6 +125,36 @@ def setup_logging(log_dir, verbose=False):
     return log_file
 
 
+# ── init ──────────────────────────────────────────────────────────────
+
+def _handle_init():
+    """Bootstrap the project: create config from the example + runtime dirs."""
+    example = os.path.join(_HERE, 'config', 'config.example.json')
+    target = _config_path()
+
+    if os.path.exists(target):
+        print(f'Config already exists: {target}')
+        print('Leaving it untouched. Edit it to match your printers.')
+        return
+
+    if not os.path.exists(example):
+        print(f'ERROR: Example config not found: {example}', file=sys.stderr)
+        sys.exit(2)
+
+    shutil.copy2(example, target)
+
+    # Runtime dirs are gitignored and needed before db/collection work
+    for d in (os.path.join(_HERE, 'data'),
+              os.path.join(_HERE, 'logs'),
+              _backups_dir()):
+        os.makedirs(d, exist_ok=True)
+
+    print(f'Created {target}')
+    print('Created runtime directories: data/, data/backups/, logs/')
+    print('Edit config/config.json with your printers, then run:')
+    print('  python main.py --collect')
+
+
 # ── collect ──────────────────────────────────────────────────────────
 
 def collect_printer(adapter, printer_cfg):
@@ -209,6 +242,32 @@ def _handle_collect(args):
     run_collection(config)
 
 
+# ── validate ──────────────────────────────────────────────────────────
+
+def _handle_validate(args):
+    from validate import validate_setup, validate_network
+
+    config_path = _config_path()
+    schema_path = os.path.join(_HERE, 'config', 'config.json.schema')
+
+    issues = validate_setup(config_path, schema_path, _HERE)
+
+    if args.network:
+        try:
+            issues += validate_network(load_config())
+        except SystemExit:
+            pass  # config missing – the setup issues already say so
+
+    for level, message in issues:
+        print(f'[{level}] {message}')
+
+    fails = [i for i in issues if i.level == 'FAIL']
+    if fails:
+        print(f'\n{len(fails)} problem(s) found. Fix them, then re-run validation.')
+        sys.exit(1)
+    print('\nSetup looks good.')
+
+
 # ── report ───────────────────────────────────────────────────────────
 
 def _handle_report(args):
@@ -255,12 +314,16 @@ def main():
     )
 
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--init', action='store_true',
+                      help='Create config/config.json from the example')
     mode.add_argument('--collect', action='store_true',
                       help='Collect statistics from all printers')
     mode.add_argument('--report', action='store_true',
                       help='Generate a weekly statistics report')
     mode.add_argument('--test', action='store_true',
                       help='Run all tests')
+    mode.add_argument('--validate', action='store_true',
+                      help='Check that the project is set up correctly')
 
     # Collect-specific flags
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -274,14 +337,22 @@ def main():
     parser.add_argument('--csv', action='store_true',
                         help='(report) Export report as CSV')
 
+    # Validate-specific flags
+    parser.add_argument('--network', action='store_true',
+                        help='(validate) Also check live SNMP reachability of each printer')
+
     args = parser.parse_args()
 
-    if args.collect:
+    if args.init:
+        _handle_init()
+    elif args.collect:
         _handle_collect(args)
     elif args.report:
         _handle_report(args)
     elif args.test:
         _handle_test()
+    elif args.validate:
+        _handle_validate(args)
     else:
         parser.print_help()
 

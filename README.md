@@ -6,6 +6,7 @@ Collects print counters from Zebra and Sato label printers via SNMP, stores them
 
 ```
 pysnmp==7.1.29
+jsonschema==4.26.0
 ```
 
 ## Setup
@@ -14,7 +15,16 @@ pysnmp==7.1.29
 pip install -r requirements.txt
 ```
 
-Edit `config/config.json` with your printers:
+Create your config from the example (only `config/config.json` is read; it is gitignored):
+
+```bash
+python main.py --init    # recommended: copies example -> config + creates data/, logs/
+```
+
+(Or copy `config/config.example.json` to `config/config.json` by hand with your platform's
+copy command, then edit.)
+
+Then edit `config/config.json` with your printers:
 
 ```json
 {
@@ -42,8 +52,9 @@ Edit `config/config.json` with your printers:
 ### Collect data
 
 ```bash
-python main.py --collect            # collect from all printers
-python main.py --collect --verbose  # with SNMP debug output
+python main.py --init                       # first-time setup (config + dirs)
+python main.py --collect                    # collect from all printers
+python main.py --collect --verbose           # with SNMP debug output
 ```
 
 ### Generate report
@@ -59,6 +70,15 @@ python main.py --report --csv                              # export CSV
 ```bash
 python main.py --test
 ```
+
+### Validate setup
+
+```bash
+python main.py --validate            # local checks: config, schema, printers, DB
+python main.py --validate --network  # also ping each printer over SNMP
+```
+
+Exit code is 0 when everything is OK, 1 when any check fails.
 
 ## Automated collection
 
@@ -119,7 +139,8 @@ Single `snapshots` table:
 main.py                 # single entry point (--collect / --report / --test)
 requirements.txt        # pinned dependencies
 config/
-  config.json           # printer list + SNMP settings (gitignored)
+  config.json           # printer list + SNMP settings (gitignored, copy from example)
+  config.example.json   # starter config (safe to commit)
   config.json.schema    # JSON Schema for config validation
 data/
   printer_stats.db      # SQLite database (gitignored)
@@ -140,5 +161,6 @@ src/
   seed_fake_data.py     # test data seeder
   snmpget.py            # single OID query tool
   snmpwalk.py           # OID subtree walker
+  validate.py           # setup validation (config, schema, printers, DB)
   run_tests.py          # test runner (standalone)
 ```

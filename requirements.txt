@@ -1,1 +1,2 @@
 pysnmp==7.1.29
+jsonschema==4.26.0

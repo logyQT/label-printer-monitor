@@ -1,0 +1,16 @@
+{
+  "db": {
+    "filename": "printer_stats.db"
+  },
+  "log_dir": "logs",
+  "snmp": {
+    "community": "public",
+    "timeout_sec": 3,
+    "retries": 2
+  },
+  "printers": [
+    { "ip": "10.0.1.10", "model": "Sato CL4NX Plus", "location": "Linia 1" },
+    { "ip": "10.0.1.11", "model": "Zebra ZT411", "location": "Linia 2" },
+    { "ip": "10.0.1.12", "model": "Zebra GX430t", "location": "Linia 3" }
+  ]
+}
