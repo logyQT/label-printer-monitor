@@ -161,7 +161,6 @@ src/
   db.py                 # SQLite storage layer
   report.py             # weekly report generator (library)
   snmp_client.py        # pysnmp wrapper
-  discover_units.py     # one-time meter unit detection tool
   seed_fake_data.py     # test data seeder
   snmpget.py            # single OID query tool
   snmpwalk.py           # OID subtree walker

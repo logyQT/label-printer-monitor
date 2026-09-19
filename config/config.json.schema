@@ -100,11 +100,6 @@
           "location": {
             "type": "string",
             "description": "Physical location of the printer"
-          },
-          "meter_unit": {
-            "type": "string",
-            "description": "Override for meter unit (optional, auto-detected if omitted)",
-            "enum": ["cm", "mm", "m", "linearMeters", "linearFeet", "sheets", "unknown"]
           }
         }
       }
