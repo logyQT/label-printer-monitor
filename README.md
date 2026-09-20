@@ -145,14 +145,14 @@ convert them. Copy one of the files in `src/adapters/` and declare the specs:
 ```python
 from adapters.base import PrinterAdapter, Metric
 
+
 class ZebraZD621Adapter(PrinterAdapter):
-    model_prefixes = ('zebra zd621',)          # model strings this adapter serves
-    snmp_version = 1                           # 0 = SNMPv1, 1 = SNMPv2c
-    reachability_oid = '1.3.6.1.4.1.10642.1.1.0'  # poke OID (model name)
+    model_prefixes = ("zebra zd621",)  # model strings this adapter serves
+    snmp_version = 1  # 0 = SNMPv1, 1 = SNMPv2c
+    reachability_oid = "1.3.6.1.4.1.10642.1.1.0"  # poke OID (model name)
     metrics = (
-        Metric('labels_total', oid='1.3.6.1.4.1.10642.3.1.6.0', convert='int'),
-        Metric('meters_total', oid='1.3.6.1.4.1.10642.3.1.1.0', convert='float',
-               unit='cm'),
+        Metric("labels_total", oid="1.3.6.1.4.1.10642.3.1.6.0", convert="int"),
+        Metric("meters_total", oid="1.3.6.1.4.1.10642.3.1.1.0", convert="float", unit="cm"),
     )
 ```
 

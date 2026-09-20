@@ -22,90 +22,95 @@ import os
 import shutil
 import sys
 from datetime import datetime
+from typing import Any, TypeAlias
 
 # Ensure src/ is on the path so library imports work
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_SRC = os.path.join(_HERE, 'src')
+_HERE: str = os.path.dirname(os.path.abspath(__file__))
+_SRC: str = os.path.join(_HERE, "src")
 sys.path.insert(0, _SRC)
 
-import db
-from adapters import create_adapter
+import db  # noqa: E402
+from adapters import create_adapter  # noqa: E402
+from adapters.base import CounterResult, PrinterAdapter  # noqa: E402
 
-log = logging.getLogger('printer_stats')
+log: logging.Logger = logging.getLogger("printer_stats")
+
+# Runtime-validated against config.json.schema; see validate.py.
+Config: TypeAlias = dict[str, Any]
 
 
 # ── path helpers ─────────────────────────────────────────────────────
 
-def _project_root():
+
+def _project_root() -> str:
     return _HERE
 
 
-def _config_path():
-    return os.path.join(_HERE, 'config', 'config.json')
+def _config_path() -> str:
+    return os.path.join(_HERE, "config", "config.json")
 
 
-def _db_path(config):
+def _db_path(config: Config) -> str:
     """Resolve the DB path from config['db']['filename'] → data/<filename>.
 
     ':memory:' is passed through as-is for in-memory SQLite databases.
     """
-    filename = config.get('db', {}).get('filename', 'printer_stats.db')
-    if filename == ':memory:':
-        return filename
-    return os.path.join(_HERE, 'data', filename)
+    filename = config.get("db", {}).get("filename", "printer_stats.db")
+    return filename if filename == ":memory:" else os.path.join(_HERE, "data", filename)
 
 
-def _backups_dir():
-    d = os.path.join(_HERE, 'data', 'backups')
+def _backups_dir() -> str:
+    d = os.path.join(_HERE, "data", "backups")
     os.makedirs(d, exist_ok=True)
     return d
 
 
 # ── helpers ──────────────────────────────────────────────────────────
 
-def load_config(path=None):
+
+def load_config(path: str | None = None) -> Config:
     path = path or _config_path()
     if not os.path.exists(path):
-        print(f'ERROR: Config file not found: {path}', file=sys.stderr)
+        print(f"ERROR: Config file not found: {path}", file=sys.stderr)
         sys.exit(2)
     try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)  # type: ignore[no-any-return]
     except json.JSONDecodeError as e:
-        print(f'ERROR: Invalid JSON in config: {e}', file=sys.stderr)
+        print(f"ERROR: Invalid JSON in config: {e}", file=sys.stderr)
         sys.exit(2)
 
 
-def backup_data(config_path=None):
+def backup_data(config_path: str | None = None) -> str:
     """Snapshot config + db into data/backups/<timestamp>/ before a run."""
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = os.path.join(_backups_dir(), ts)
     os.makedirs(dest, exist_ok=True)
 
     # Backup config
     src = config_path or _config_path()
     if os.path.exists(src):
-        shutil.copy2(src, os.path.join(dest, 'config.json'))
+        shutil.copy2(src, os.path.join(dest, "config.json"))
 
     # Backup schema
-    schema = os.path.join(_HERE, 'config', 'config.json.schema')
+    schema = os.path.join(_HERE, "config", "config.json.schema")
     if os.path.exists(schema):
-        shutil.copy2(schema, os.path.join(dest, 'config.json.schema'))
+        shutil.copy2(schema, os.path.join(dest, "config.json.schema"))
 
     return dest
 
 
-def setup_logging(log_dir, verbose=False):
+def setup_logging(log_dir: str, verbose: bool = False) -> str:
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    now = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = os.path.join(log_dir, f'run_{now}.log')
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f"run_{now}.log")
 
     level = logging.DEBUG if verbose else logging.INFO
-    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
@@ -119,7 +124,7 @@ def setup_logging(log_dir, verbose=False):
         root.removeHandler(h)
     root.addHandler(logging.NullHandler())
 
-    app_logger = logging.getLogger('printer_stats')
+    app_logger = logging.getLogger("printer_stats")
     app_logger.setLevel(logging.DEBUG)
     app_logger.propagate = False
     app_logger.addHandler(file_handler)
@@ -129,59 +134,61 @@ def setup_logging(log_dir, verbose=False):
 
 # ── init ──────────────────────────────────────────────────────────────
 
-def _handle_init():
+
+def _handle_init() -> None:
     """Bootstrap the project: create config from the example + runtime dirs."""
     from validate import find_schema_violation, resolve_schema_path
 
-    example = os.path.join(_HERE, 'config', 'config.example.json')
+    example = os.path.join(_HERE, "config", "config.example.json")
     target = _config_path()
 
     if os.path.exists(target):
-        print(f'Config already exists: {target}')
-        print('Leaving it untouched. Edit it to match your printers.')
+        print(f"Config already exists: {target}")
+        print("Leaving it untouched. Edit it to match your printers.")
         return
 
     if not os.path.exists(example):
-        print(f'ERROR: Example config not found: {example}', file=sys.stderr)
+        print(f"ERROR: Example config not found: {example}", file=sys.stderr)
         sys.exit(2)
 
     shutil.copy2(example, target)
 
     # Runtime dirs are gitignored and needed before db/collection work
-    for d in (os.path.join(_HERE, 'data'),
-              os.path.join(_HERE, 'logs'),
-              _backups_dir()):
+    for d in (os.path.join(_HERE, "data"), os.path.join(_HERE, "logs"), _backups_dir()):
         os.makedirs(d, exist_ok=True)
 
-    print(f'Created {target}')
-    print('Created runtime directories: data/, data/backups/, logs/')
+    print(f"Created {target}")
+    print("Created runtime directories: data/, data/backups/, logs/")
 
     # The copied config carries a $schema link - confirm it validates
     schema_path = resolve_schema_path(target)
     try:
-        with open(target, 'r', encoding='utf-8') as f:
+        with open(target, encoding="utf-8") as f:
             cfg = json.load(f)
-        with open(schema_path, 'r', encoding='utf-8') as f:
+        with open(schema_path, encoding="utf-8") as f:
             schema = json.load(f)
         violation = find_schema_violation(cfg, schema)
         if violation:
-            print(f'WARNING: copied config does not match schema: {violation.message}')
+            print(f"WARNING: copied config does not match schema: {violation.message}")
         else:
-            print(f'Config validates against {os.path.basename(schema_path)}')
+            print(f"Config validates against {os.path.basename(schema_path)}")
     except Exception as e:
-        print(f'WARNING: could not validate copied config: {e}')
+        print(f"WARNING: could not validate copied config: {e}")
 
-    print('Edit config/config.json with your printers, then run:')
-    print('  python main.py --validate  # check everything is set up')
-    print('  python main.py --collect')
+    print("Edit config/config.json with your printers, then run:")
+    print("  python main.py --validate  # check everything is set up")
+    print("  python main.py --collect")
 
 
 # ── collect ──────────────────────────────────────────────────────────
 
-def collect_printer(adapter, printer_cfg):
+
+def collect_printer(
+    adapter: PrinterAdapter, printer_cfg: dict[str, Any]
+) -> CounterResult | None:
     try:
         counters = adapter.get_counters()
-        if not counters.get('reachable'):
+        if not counters.get("reachable"):
             log.warning(f"Printer {printer_cfg['ip']} ({printer_cfg['location']}) not reachable")
             return None
         return counters
@@ -190,7 +197,9 @@ def collect_printer(adapter, printer_cfg):
         return None
 
 
-def _collect_one(printer_cfg, community, timeout, retries):
+def _collect_one(
+    printer_cfg: dict[str, Any], community: str, timeout: int, retries: int
+) -> CounterResult | None:
     """Collect counters from a single printer (runs in a worker thread).
 
     Returns a counters dict, or None when the printer is unreachable or the
@@ -198,7 +207,8 @@ def _collect_one(printer_cfg, community, timeout, retries):
     can count them as failures.
     """
     adapter = create_adapter(
-        printer_cfg['model'], printer_cfg['ip'],
+        printer_cfg["model"],
+        printer_cfg["ip"],
         community=community,
         timeout_sec=timeout,
         retries=retries,
@@ -206,39 +216,34 @@ def _collect_one(printer_cfg, community, timeout, retries):
     return collect_printer(adapter, printer_cfg)
 
 
-def run_collection(config):
+def run_collection(config: Config) -> tuple[int, int, int]:
     db_path = _db_path(config)
     conn = db.init_db(db_path)
-    snmp_config = config.get('snmp', {})
-    community = snmp_config.get('community', 'public')
-    timeout = snmp_config.get('timeout_sec', 3)
-    retries = snmp_config.get('retries', 2)
-    max_concurrency = max(
-        1, int(config.get('collection', {}).get('max_concurrency', 20))
-    )
+    snmp_config = config.get("snmp", {})
+    community = snmp_config.get("community", "public")
+    timeout = snmp_config.get("timeout_sec", 3)
+    retries = snmp_config.get("retries", 2)
+    max_concurrency = max(1, int(config.get("collection", {}).get("max_concurrency", 20)))
 
     success = 0
     fail = 0
-    total = len(config['printers'])
+    total = len(config["printers"])
 
-    log.info(f"Starting collection for {total} printers "
-             f"(max concurrency: {max_concurrency})")
+    log.info(f"Starting collection for {total} printers (max concurrency: {max_concurrency})")
 
     # Collect all printers in parallel so a dead printer's timeout doesn't
     # stall the rest. DB writes stay on the main thread because sqlite3
     # connections are not safe to share across threads.
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-        futures = {
-            executor.submit(
-                _collect_one, printer_cfg, community, timeout, retries
-            ): printer_cfg
-            for printer_cfg in config['printers']
+        futures: dict[concurrent.futures.Future[CounterResult | None], dict[str, Any]] = {
+            executor.submit(_collect_one, printer_cfg, community, timeout, retries): printer_cfg
+            for printer_cfg in config["printers"]
         }
         for future in concurrent.futures.as_completed(futures):
             printer_cfg = futures[future]
-            ip = printer_cfg['ip']
-            model = printer_cfg['model']
-            location = printer_cfg['location']
+            ip = printer_cfg["ip"]
+            model = printer_cfg["model"]
+            location = printer_cfg["location"]
 
             try:
                 counters = future.result()
@@ -258,31 +263,28 @@ def run_collection(config):
             db.save_snapshot(
                 conn,
                 printer_ip=ip,
-                labels_total=counters.get('labels_total'),
-                meters_total=counters.get('meters_total'),
-                meter_unit=counters.get('meter_unit', 'unknown'),
-                model_name=counters.get('model_name', ''),
+                labels_total=counters.get("labels_total"),
+                meters_total=counters.get("meters_total"),
+                meter_unit=counters.get("meter_unit", "unknown"),
+                model_name=counters.get("model_name", ""),
             )
             success += 1
-            labels = counters.get('labels_total')
-            meters = counters.get('meters_total')
-            unit = counters.get('meter_unit', '')
+            labels = counters.get("labels_total")
+            meters = counters.get("meters_total")
+            unit = counters.get("meter_unit", "")
             labels_str = f"{labels:,}" if labels is not None else "n/a"
             meters_str = f"{meters:,.1f} {unit}" if meters is not None else "n/a"
-            log.info(
-                f"{model} ({ip}) [{location}] - "
-                f"labels: {labels_str}, odometer: {meters_str}"
-            )
+            log.info(f"{model} ({ip}) [{location}] - labels: {labels_str}, odometer: {meters_str}")
 
     db.close_db(conn)
     log.info(f"Collection complete: {success}/{total} success, {fail}/{total} failed")
     return success, fail, total
 
 
-def _handle_collect(args):
+def _handle_collect(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     backup_data(args.config)
-    log_dir = os.path.join(_project_root(), config.get('log_dir', 'logs'))
+    log_dir = os.path.join(_project_root(), config.get("log_dir", "logs"))
     log_file = setup_logging(log_dir, verbose=args.verbose)
     log.info(f"Log file: {log_file}")
     run_collection(config)
@@ -290,12 +292,13 @@ def _handle_collect(args):
 
 # ── validate ──────────────────────────────────────────────────────────
 
-def _handle_validate(args):
-    from validate import validate_setup, validate_network
+
+def _handle_validate(args: argparse.Namespace) -> None:
+    from validate import Issue, validate_network, validate_setup
 
     config_path = args.config or _config_path()
 
-    issues = validate_setup(config_path, _HERE)
+    issues: list[Issue] = validate_setup(config_path, _HERE)
 
     if args.network:
         try:
@@ -304,29 +307,30 @@ def _handle_validate(args):
             pass  # config missing – the setup issues already say so
 
     for level, message in issues:
-        print(f'[{level}] {message}')
+        print(f"[{level}] {message}")
 
-    fails = [i for i in issues if i.level == 'FAIL']
+    fails = [i for i in issues if i.level == "FAIL"]
     if fails:
-        print(f'\n{len(fails)} problem(s) found. Fix them, then re-run validation.')
+        print(f"\n{len(fails)} problem(s) found. Fix them, then re-run validation.")
         sys.exit(1)
-    print('\nSetup looks good.')
+    print("\nSetup looks good.")
 
 
 # ── report ───────────────────────────────────────────────────────────
 
-def _handle_report(args):
-    from report import compute_weekly, print_report, export_csv
+
+def _handle_report(args: argparse.Namespace) -> None:
+    from report import compute_weekly, export_csv, print_report
 
     config = load_config(args.config)
     backup_data(args.config)
-    from_date = args.from_date or datetime.now().strftime('%Y-%m-%d')
-    to_date = args.to_date or datetime.now().strftime('%Y-%m-%d')
+    from_date = args.from_date or datetime.now().strftime("%Y-%m-%d")
+    to_date = args.to_date or datetime.now().strftime("%Y-%m-%d")
 
     weeks = compute_weekly(config, from_date, to_date)
 
     if args.csv:
-        path = os.path.join(_project_root(), f'report_{from_date}_to_{to_date}.csv')
+        path = os.path.join(_project_root(), f"report_{from_date}_to_{to_date}.csv")
         export_csv(weeks, config, path)
     else:
         print_report(weeks, config)
@@ -334,15 +338,16 @@ def _handle_report(args):
 
 # ── test ─────────────────────────────────────────────────────────────
 
-def _handle_test():
+
+def _handle_test() -> None:
     import unittest
-    test_dir = os.path.join(_SRC, '_tests_')
+
+    test_dir = os.path.join(_SRC, "_tests_")
     if not os.path.isdir(test_dir):
-        print(f'ERROR: Test directory not found: {test_dir}', file=sys.stderr)
+        print(f"ERROR: Test directory not found: {test_dir}", file=sys.stderr)
         sys.exit(2)
     loader = unittest.TestLoader()
-    suite = loader.discover(test_dir, pattern='test_*.py',
-                            top_level_dir=_SRC)
+    suite = loader.discover(test_dir, pattern="test_*.py", top_level_dir=_SRC)
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
     failed = len(result.failures)
@@ -352,44 +357,43 @@ def _handle_test():
 
 # ── entry point ──────────────────────────────────────────────────────
 
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description='Printer statistics - collect & report',
-        epilog='Run with no flags to see this help message.',
+        description="Printer statistics - collect & report",
+        epilog="Run with no flags to see this help message.",
     )
 
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument('--init', action='store_true',
-                      help='Create config/config.json from the example')
-    mode.add_argument('--collect', action='store_true',
-                      help='Collect statistics from all printers')
-    mode.add_argument('--report', action='store_true',
-                      help='Generate a weekly statistics report')
-    mode.add_argument('--test', action='store_true',
-                      help='Run all tests')
-    mode.add_argument('--validate', action='store_true',
-                      help='Check that the project is set up correctly')
+    mode.add_argument(
+        "--init", action="store_true", help="Create config/config.json from the example"
+    )
+    mode.add_argument("--collect", action="store_true", help="Collect statistics from all printers")
+    mode.add_argument("--report", action="store_true", help="Generate a weekly statistics report")
+    mode.add_argument("--test", action="store_true", help="Run all tests")
+    mode.add_argument(
+        "--validate", action="store_true", help="Check that the project is set up correctly"
+    )
 
     # Collect-specific flags
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='(collect) Show detailed SNMP debug output')
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="(collect) Show detailed SNMP debug output"
+    )
 
     # Config selection (all modes)
-    parser.add_argument('--config',
-                        help='Path to a config JSON file '
-                             '(default: config/config.json)')
+    parser.add_argument("--config", help="Path to a config JSON file (default: config/config.json)")
 
     # Report-specific flags
-    parser.add_argument('--from', dest='from_date',
-                        help='(report) Start date (YYYY-MM-DD)')
-    parser.add_argument('--to', dest='to_date',
-                        help='(report) End date (YYYY-MM-DD)')
-    parser.add_argument('--csv', action='store_true',
-                        help='(report) Export report as CSV')
+    parser.add_argument("--from", dest="from_date", help="(report) Start date (YYYY-MM-DD)")
+    parser.add_argument("--to", dest="to_date", help="(report) End date (YYYY-MM-DD)")
+    parser.add_argument("--csv", action="store_true", help="(report) Export report as CSV")
 
     # Validate-specific flags
-    parser.add_argument('--network', action='store_true',
-                        help='(validate) Also check live SNMP reachability of each printer')
+    parser.add_argument(
+        "--network",
+        action="store_true",
+        help="(validate) Also check live SNMP reachability of each printer",
+    )
 
     args = parser.parse_args()
 
@@ -407,5 +411,5 @@ def main():
         parser.print_help()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

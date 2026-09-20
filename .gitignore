@@ -28,6 +28,10 @@ data/*.db-shm
 data/backups/
 logs/
 
+# Lint / type-check caches
+.mypy_cache/
+.ruff_cache/
+
 # OS
 Thumbs.db
 Desktop.ini

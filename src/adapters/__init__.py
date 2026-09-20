@@ -1,17 +1,26 @@
 """Adapter registry: maps model names to adapter classes."""
 
-from adapters.zebra_zt411 import ZebraZT411Adapter
-from adapters.zebra_gx430t import ZebraGX430tAdapter
-from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
+from typing import Any
 
-ADAPTER_CLASSES = (ZebraZT411Adapter, ZebraGX430tAdapter, SatoCL4NXPlusAdapter)
+from adapters.base import PrinterAdapter
+from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
+from adapters.zebra_gx430t import ZebraGX430tAdapter
+from adapters.zebra_zt411 import ZebraZT411Adapter
+
+ADAPTER_CLASSES: tuple[type[PrinterAdapter], ...] = (
+    ZebraZT411Adapter,
+    ZebraGX430tAdapter,
+    SatoCL4NXPlusAdapter,
+)
 
 # Backward-compat alias: model prefix -> adapter class, derived from the
 # model_prefixes each adapter declares.
-ADAPTER_REGISTRY = {prefix: cls for cls in ADAPTER_CLASSES for prefix in cls.model_prefixes}
+ADAPTER_REGISTRY: dict[str, type[PrinterAdapter]] = {
+    prefix: cls for cls in ADAPTER_CLASSES for prefix in cls.model_prefixes
+}
 
 
-def get_adapter_class(model):
+def get_adapter_class(model: str) -> type[PrinterAdapter]:
     """Resolve adapter class by model string (case-insensitive).
 
     Args:
@@ -27,16 +36,29 @@ def get_adapter_class(model):
     for cls in ADAPTER_CLASSES:
         if any(model_lower.startswith(prefix) for prefix in cls.model_prefixes):
             return cls
-    raise ValueError(f'No adapter found for model: {model}')
+    raise ValueError(f"No adapter found for model: {model}")
 
 
-def create_adapter(model, ip, community='public', timeout_sec=5, retries=2,
-                   version=None, **kwargs):
+def create_adapter(
+    model: str,
+    ip: str,
+    community: str = "public",
+    timeout_sec: int = 5,
+    retries: int = 2,
+    version: int | None = None,
+    **kwargs: Any,
+) -> PrinterAdapter:
     """Create an adapter instance for the given model and IP.
 
     The SNMP version is the adapter's own choice (snmp_version) unless an
     explicit version is passed.
     """
     cls = get_adapter_class(model)
-    return cls(ip=ip, community=community, timeout_sec=timeout_sec,
-               retries=retries, version=version, **kwargs)
+    return cls(
+        ip=ip,
+        community=community,
+        timeout_sec=timeout_sec,
+        retries=retries,
+        version=version,
+        **kwargs,
+    )

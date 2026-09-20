@@ -1,0 +1,44 @@
+# Shared project configuration for linting (ruff) and type checking (mypy).
+#
+#   ruff check .            -> lint (fast)
+#   ruff format .           -> auto-format
+#   mypy                    -> strict type check
+#
+# See README "Development: linting & type safety" for details.
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+# E,W  pycodestyle   F  pyflakes   I  isort   UP  pyupgrade
+# B    bugbear       SIM simplify  TCH type-checking imports  ANN annotations
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "TCH", "ANN"]
+# ANN401: explicit `Any` is legitimate at third-party boundaries (pysnmp etc.)
+ignore = ["ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files: unittest-style asserts; mypy --strict still enforces annotations.
+"src/_tests_/*.py" = ["ANN"]
+
+[tool.mypy]
+python_version = "3.13"
+# main.py imports `db` / `adapters` from src/ via a sys.path shim; mirror that
+# for the resolver so bare imports (`import db`, `from snmp_client import ...`)
+# resolve the same way they do at runtime.
+mypy_path = ["src"]
+files = ["main.py", "src"]
+show_error_codes = true
+# `--strict` enables: disallow untyped defs/globals, disallow Any generics,
+# warn unused ignores, strict optional, etc. — the "strong type safety" baseline.
+strict = true
+
+[[tool.mypy.overrides]]
+# pysnmp ships no type stubs; the client wraps it behind typed interfaces.
+module = ["pysnmp.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# jsonschema ships no type stubs; validate.py boundaries stay `Any`.
+module = ["jsonschema.*"]
+ignore_missing_imports = true
