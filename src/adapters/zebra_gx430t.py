@@ -9,7 +9,7 @@ Requires SNMPv1 (v2c times out) - declared via snmp_version.
 Declarative specification - see adapters.base for the engine.
 """
 
-from adapters.base import Metric, PrinterAdapter
+from src.adapters.base import Metric, PrinterAdapter
 
 OID_REACHABILITY: str = "1.3.6.1.4.1.10642.1.1.0"  # model name
 OID_TOTAL_USAGE: str = "1.3.6.1.4.1.10642.200.17.7.0"  # "89667 INCHES, 227775 CENTIMETERS"

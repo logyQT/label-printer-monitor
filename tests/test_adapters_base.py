@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.base import CounterResult, PrinterAdapter
+from src.adapters.base import CounterResult, PrinterAdapter
 
 
 class ConcretePrinterAdapter(PrinterAdapter):
@@ -41,7 +41,7 @@ class FailingPrinterAdapter(PrinterAdapter):
 class TestSnmpGet(unittest.TestCase):
     """Tests for _snmp_get helper."""
 
-    @patch("snmp_client.get")
+    @patch("src.snmp_client.get")
     def test_successful_get(self, mock_get: MagicMock) -> None:
         mock_get.return_value = (42, 0x02)
         adapter = ConcretePrinterAdapter("10.0.0.1")
@@ -49,9 +49,9 @@ class TestSnmpGet(unittest.TestCase):
         self.assertEqual(value, 42)
         self.assertEqual(tag, 0x02)
 
-    @patch("snmp_client.get")
+    @patch("src.snmp_client.get")
     def test_timeout_returns_none(self, mock_get: MagicMock) -> None:
-        from snmp_client import SnmpTimeout
+        from src.snmp_client import SnmpTimeout
 
         mock_get.side_effect = SnmpTimeout("timeout")
         adapter = ConcretePrinterAdapter("10.0.0.1")
@@ -59,9 +59,9 @@ class TestSnmpGet(unittest.TestCase):
         self.assertIsNone(value)
         self.assertIsNone(tag)
 
-    @patch("snmp_client.get")
+    @patch("src.snmp_client.get")
     def test_snmp_error_returns_none(self, mock_get: MagicMock) -> None:
-        from snmp_client import SnmpError
+        from src.snmp_client import SnmpError
 
         mock_get.side_effect = SnmpError("error")
         adapter = ConcretePrinterAdapter("10.0.0.1")
@@ -73,7 +73,7 @@ class TestSnmpGet(unittest.TestCase):
 class TestSnmpGetRetry(unittest.TestCase):
     """Tests for _snmp_get_retry helper."""
 
-    @patch("snmp_client.get")
+    @patch("src.snmp_client.get")
     def test_success_on_first_try(self, mock_get: MagicMock) -> None:
         mock_get.return_value = (100, 0x02)
         adapter = ConcretePrinterAdapter("10.0.0.1")
@@ -81,9 +81,9 @@ class TestSnmpGetRetry(unittest.TestCase):
         self.assertEqual(value, 100)
 
     @patch("time.sleep")
-    @patch("snmp_client.get")
+    @patch("src.snmp_client.get")
     def test_retries_on_timeout(self, mock_get: MagicMock, mock_sleep: MagicMock) -> None:
-        from snmp_client import SnmpTimeout
+        from src.snmp_client import SnmpTimeout
 
         mock_get.side_effect = [SnmpTimeout("t"), SnmpTimeout("t"), (42, 0x02)]
         adapter = ConcretePrinterAdapter("10.0.0.1")
@@ -95,9 +95,9 @@ class TestSnmpGetRetry(unittest.TestCase):
         self.assertEqual(calls, [0.5, 1.0])
 
     @patch("time.sleep")
-    @patch("snmp_client.get")
+    @patch("src.snmp_client.get")
     def test_all_retries_fail(self, mock_get: MagicMock, mock_sleep: MagicMock) -> None:
-        from snmp_client import SnmpTimeout
+        from src.snmp_client import SnmpTimeout
 
         mock_get.side_effect = SnmpTimeout("t")
         adapter = ConcretePrinterAdapter("10.0.0.1")

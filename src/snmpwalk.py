@@ -20,7 +20,7 @@ from pysnmp.hlapi.v1arch.asyncio import (
     get_cmd,
 )
 
-from snmp_client import (
+from src.snmp_client import (
     TAG_COUNTER32,
     TAG_GAUGE32,
     TAG_INTEGER,

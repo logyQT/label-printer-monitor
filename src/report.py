@@ -8,10 +8,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
-import db
-
-_HERE: str = os.path.dirname(os.path.abspath(__file__))
-_ROOT: str = os.path.dirname(_HERE)
+from src import db
 
 
 class WeekRow(TypedDict):
@@ -54,10 +51,15 @@ def _week_dates(label: str) -> tuple[str, str]:
     return monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
 
 
-def compute_weekly(config: dict[str, Any], from_date: str, to_date: str) -> Weeks:
+def compute_weekly(
+    config: dict[str, Any], from_date: str, to_date: str, root: str | None = None
+) -> Weeks:
     """Returns {week_label: [{ip, model, labels, meters}, ...]}"""
+    from src.env import DATA_ROOT
+
+    root = root or DATA_ROOT
     filename = config.get("db", {}).get("filename", "printer_stats.db")
-    db_path = filename if filename == ":memory:" else os.path.join(_ROOT, "data", filename)
+    db_path = filename if filename == ":memory:" else os.path.join(root, "data", filename)
     conn = db.init_db(db_path)
     from_ep = _to_epoch(from_date)
     to_ep = _to_epoch(to_date) + 86399

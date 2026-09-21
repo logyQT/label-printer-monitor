@@ -7,18 +7,12 @@ Tests cover:
 """
 
 import os
-import sys
 import tempfile
 import unittest
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # src/
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)  # project root
-
-import main
+import main as main
 
 
 class TestLoadConfig(unittest.TestCase):

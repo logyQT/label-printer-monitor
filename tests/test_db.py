@@ -18,7 +18,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import db
+from src import db
 
 
 class TestInitDb(unittest.TestCase):

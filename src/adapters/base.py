@@ -231,7 +231,7 @@ class PrinterAdapter(ABC):  # noqa: B024
 
     def _snmp_get(self, oid: str, label: str | None = None) -> tuple[Any | None, int | None]:
         """Single SNMP GET. Returns (value, type_tag) or (None, None)."""
-        from snmp_client import SnmpError, SnmpTimeout, get
+        from src.snmp_client import SnmpError, SnmpTimeout, get
 
         tag = label or oid
         try:

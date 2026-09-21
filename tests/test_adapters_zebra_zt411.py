@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.zebra_zt411 import OID_LABELS, OID_METERS, OID_REACHABILITY, ZebraZT411Adapter
-from snmp_client import TAG_COUNTER32, TAG_OCTET_STRING
+from src.adapters.zebra_zt411 import OID_LABELS, OID_METERS, OID_REACHABILITY, ZebraZT411Adapter
+from src.snmp_client import TAG_COUNTER32, TAG_OCTET_STRING
 
 
 class TestZebraZT411Adapter(unittest.TestCase):

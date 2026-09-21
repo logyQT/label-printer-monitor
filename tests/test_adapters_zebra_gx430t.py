@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.zebra_gx430t import OID_REACHABILITY, OID_TOTAL_USAGE, ZebraGX430tAdapter
-from snmp_client import TAG_OCTET_STRING
+from src.adapters.zebra_gx430t import OID_REACHABILITY, OID_TOTAL_USAGE, ZebraGX430tAdapter
+from src.snmp_client import TAG_OCTET_STRING
 
 
 class TestZebraGX430tAdapter(unittest.TestCase):

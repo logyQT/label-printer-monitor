@@ -13,10 +13,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters import ADAPTER_CLASSES, ADAPTER_REGISTRY, create_adapter, get_adapter_class
-from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
-from adapters.zebra_gx430t import ZebraGX430tAdapter
-from adapters.zebra_zt411 import ZebraZT411Adapter
+from src.adapters import ADAPTER_CLASSES, ADAPTER_REGISTRY, create_adapter, get_adapter_class
+from src.adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
+from src.adapters.zebra_gx430t import ZebraGX430tAdapter
+from src.adapters.zebra_zt411 import ZebraZT411Adapter
 
 
 class TestAdapterRegistry(unittest.TestCase):

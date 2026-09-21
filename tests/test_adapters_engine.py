@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import cast
 
-from adapters import ADAPTER_CLASSES
-from adapters.base import (
+from src.adapters import ADAPTER_CLASSES
+from src.adapters.base import (
     METRIC_KEYS,
     ConverterSpec,
     Metric,
@@ -27,7 +27,7 @@ from adapters.base import (
     convert_unit_map,
     convert_value,
 )
-from snmp_client import TAG_COUNTER32, TAG_OCTET_STRING
+from src.snmp_client import TAG_COUNTER32, TAG_OCTET_STRING
 
 USAGE_PATTERN = r"(\d[\d,]*)\s*(CENTIMETERS|INCHES)"
 

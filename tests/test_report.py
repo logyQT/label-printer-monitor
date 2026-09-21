@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Any
 
-import db
-import report
+import src.report as report
+from src import db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -135,7 +135,7 @@ class TestComputeWeekly(unittest.TestCase):
         db.save_snapshot(conn, "10.0.0.1", 120, 60.0, "cm", "Zebra ZT230", timestamp=ts_end)
 
         # Patch to return our still-open connection
-        with patch("report.db.init_db", return_value=conn), patch("report.db.close_db"):
+        with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
             weeks = report.compute_weekly(config, "2026-09-17", "2026-09-17")
 
         db.close_db(conn)
@@ -154,7 +154,7 @@ class TestComputeWeekly(unittest.TestCase):
         config = _make_config()
         conn = db.init_db(":memory:")
 
-        with patch("report.db.init_db", return_value=conn), patch("report.db.close_db"):
+        with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
             weeks = report.compute_weekly(config, "2026-09-17", "2026-09-17")
 
         db.close_db(conn)
@@ -173,7 +173,7 @@ class TestComputeWeekly(unittest.TestCase):
                 conn, ip, 20, 2.0, "m", "Model", timestamp=_epoch_for_date("2026-09-17", 10, 0)
             )
 
-        with patch("report.db.init_db", return_value=conn), patch("report.db.close_db"):
+        with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
             weeks = report.compute_weekly(config, "2026-09-17", "2026-09-17")
 
         db.close_db(conn)
@@ -194,7 +194,7 @@ class TestComputeWeekly(unittest.TestCase):
                 conn, "10.0.0.1", 60, 6.0, "m", "Zebra ZT230", timestamp=_epoch_for_date(day, 10, 0)
             )
 
-        with patch("report.db.init_db", return_value=conn), patch("report.db.close_db"):
+        with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
             weeks = report.compute_weekly(config, "2026-09-07", "2026-09-14")
 
         db.close_db(conn)
@@ -216,7 +216,7 @@ class TestComputeWeekly(unittest.TestCase):
             timestamp=_epoch_for_date("2026-09-17", 9, 0),
         )
 
-        with patch("report.db.init_db", return_value=conn), patch("report.db.close_db"):
+        with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
             weeks = report.compute_weekly(config, "2026-09-17", "2026-09-17")
 
         db.close_db(conn)

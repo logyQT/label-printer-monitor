@@ -12,7 +12,7 @@ sys.path.insert(
 
 from typing import Any
 
-import validate
+import src.validate as validate
 
 
 class FakeAdapter:
@@ -41,7 +41,7 @@ class TestValidateNetwork(unittest.TestCase):
         return cfg
 
     def test_checks_all_printers_in_order(self) -> None:
-        with patch("validate.get_adapter_class", return_value=FakeAdapter):
+        with patch("src.validate.get_adapter_class", return_value=FakeAdapter):
             issues = validate.validate_network(self._config())
         self.assertEqual(len(issues), 3)
         self.assertIn("SNMP reachable", issues[0].message)
@@ -66,8 +66,8 @@ class TestValidateNetwork(unittest.TestCase):
 
         cfg = self._config(collection={"max_concurrency": 3})
         with (
-            patch("validate.get_adapter_class", return_value=FakeAdapter),
-            patch("validate.concurrent.futures.ThreadPoolExecutor", side_effect=fake_tpe),
+            patch("src.validate.get_adapter_class", return_value=FakeAdapter),
+            patch("src.validate.concurrent.futures.ThreadPoolExecutor", side_effect=fake_tpe),
         ):
             issues = validate.validate_network(cfg)
         self.assertEqual(captured.get("max_workers"), 3)
@@ -81,7 +81,7 @@ class TestValidateNetwork(unittest.TestCase):
             def is_reachable(self) -> bool:
                 raise RuntimeError("boom")
 
-        with patch("validate.get_adapter_class", return_value=ExplodingAdapter):
+        with patch("src.validate.get_adapter_class", return_value=ExplodingAdapter):
             issues = validate.validate_network(self._config())
         self.assertEqual(len(issues), 3)
         self.assertTrue(all("check failed" in i.message for i in issues))

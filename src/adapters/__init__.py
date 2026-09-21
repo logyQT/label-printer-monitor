@@ -2,10 +2,10 @@
 
 from typing import Any
 
-from adapters.base import PrinterAdapter
-from adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
-from adapters.zebra_gx430t import ZebraGX430tAdapter
-from adapters.zebra_zt411 import ZebraZT411Adapter
+from src.adapters.base import PrinterAdapter
+from src.adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
+from src.adapters.zebra_gx430t import ZebraGX430tAdapter
+from src.adapters.zebra_zt411 import ZebraZT411Adapter
 
 ADAPTER_CLASSES: tuple[type[PrinterAdapter], ...] = (
     ZebraZT411Adapter,

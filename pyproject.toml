@@ -4,6 +4,9 @@
 #   ruff format .           -> auto-format
 #   mypy                    -> strict type check
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.ruff]
 target-version = "py313"
 line-length = 100
@@ -17,14 +20,13 @@ ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
 # Test files: unittest-style asserts; mypy --strict still enforces annotations.
-"src/_tests_/*.py" = ["ANN"]
+"tests/*.py" = ["ANN"]
 
 [tool.mypy]
 python_version = "3.13"
-# main.py imports `db` / `adapters` from src/ via a sys.path shim; mirror that
-# for the resolver so bare imports (`import db`, `from snmp_client import ...`)
-# resolve the same way they do at runtime.
-mypy_path = ["src"]
+# Imports use the ``src.`` package prefix; the project root must be on the
+# path so mypy can resolve ``import src.db`` etc.
+mypy_path = ["."]
 files = ["main.py", "src"]
 show_error_codes = true
 # `--strict` enables: disallow untyped defs/globals, disallow Any generics,

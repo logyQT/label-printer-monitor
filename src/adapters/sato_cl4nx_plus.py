@@ -9,7 +9,7 @@ No label count available via SNMP on Sato.
 Declarative specification - see adapters.base for the engine.
 """
 
-from adapters.base import Metric, PrinterAdapter
+from src.adapters.base import Metric, PrinterAdapter
 
 OID_REACHABILITY: str = "1.3.6.1.2.1.43.5.1.1.16.1"  # printer name
 OID_METERS: str = "1.3.6.1.2.1.43.10.2.1.4.1.1"  # prtMarkerLifeCount

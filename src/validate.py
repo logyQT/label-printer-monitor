@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import best_match
 
-from adapters import get_adapter_class
+from src.adapters import get_adapter_class
 
 
 class Issue(NamedTuple):
@@ -144,7 +144,7 @@ def validate_setup(
 
     # 6. Database initializes (implies data/ is writable)
     try:
-        import db
+        from src import db
 
         actual_db = db_path or os.path.join(
             project_root, "data", config.get("db", {}).get("filename", "printer_stats.db")

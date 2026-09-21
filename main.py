@@ -8,10 +8,9 @@ Usage:
     python main.py --report                 # weekly report (current week)
     python main.py --report --from 2026-09-01 --to 2026-09-30
     python main.py --report --csv           # export CSV
-    python main.py --test                   # run all tests
     python main.py --validate               # check that everything is set up
     python main.py --validate --network     # also check SNMP reachability
-    python main.py                          # show this help
+    python main.py                          # show this help message
 """
 
 import argparse
@@ -25,14 +24,29 @@ import sys
 from datetime import datetime
 from typing import Any
 
-# Ensure src/ is on the path so library imports work
+# When running from source, put the project root on sys.path so that
+# ``import src.db`` etc. resolve correctly.  In a frozen Nuitka build
+# the ``src`` package is compiled into the binary and sys.path is not
+# needed.
 _HERE: str = os.path.dirname(os.path.abspath(__file__))
-_SRC: str = os.path.join(_HERE, "src")
-sys.path.insert(0, _SRC)
+# In dev mode src/ is a sibling of main.py; in a Nuitka onefile build
+# __file__ points at the temp extraction dir where src/ doesn't exist.
+if os.path.isdir(os.path.join(_HERE, "src")):
+    sys.path.insert(0, _HERE)
 
-import db  # noqa: E402
-from adapters import create_adapter  # noqa: E402
-from adapters.base import CounterResult, PrinterAdapter  # noqa: E402
+from src import db  # noqa: E402
+from src.adapters import create_adapter  # noqa: E402
+from src.adapters.base import CounterResult, PrinterAdapter  # noqa: E402
+from src.env import (  # noqa: E402
+    DATA_ROOT,
+    EMBEDDED_CONFIG_EXAMPLE,
+    EMBEDDED_SCHEMA,
+    FROZEN,
+    backups_dir,
+    config_dir,
+    data_dir,
+    logs_dir,
+)
 
 log: logging.Logger = logging.getLogger("printer_stats")
 
@@ -44,26 +58,32 @@ type Config = dict[str, Any]
 
 
 def _project_root() -> str:
-    return _HERE
+    r"""Return the base directory for relative path resolution.
+
+    In dev mode this is the repo root (same as _HERE).
+    In frozen/exe mode this is %APPDATA%\com.logy.lpm.
+    All config-relative paths (log_dir, db filename, etc.) resolve
+    against this.
+    """
+    return DATA_ROOT
 
 
 def _config_path() -> str:
-    return os.path.join(_HERE, "config", "config.json")
+    return os.path.join(config_dir(), "config.json")
+
+
+def _schema_path() -> str:
+    """Path to config.json.schema inside the config directory."""
+    return os.path.join(config_dir(), "config.json.schema")
 
 
 def _db_path(config: Config) -> str:
-    """Resolve the DB path from config['db']['filename'] → data/<filename>.
+    """Resolve the DB path from config['db']['filename'] -> data/<filename>.
 
     ':memory:' is passed through as-is for in-memory SQLite databases.
     """
     filename = config.get("db", {}).get("filename", "printer_stats.db")
-    return filename if filename == ":memory:" else os.path.join(_HERE, "data", filename)
-
-
-def _backups_dir() -> str:
-    d = os.path.join(_HERE, "data", "backups")
-    os.makedirs(d, exist_ok=True)
-    return d
+    return filename if filename == ":memory:" else os.path.join(data_dir(), filename)
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -85,7 +105,7 @@ def load_config(path: str | None = None) -> Config:
 def backup_data(config_path: str | None = None) -> str:
     """Snapshot config + db into data/backups/<timestamp>/ before a run."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = os.path.join(_backups_dir(), ts)
+    dest = os.path.join(backups_dir(), ts)
     os.makedirs(dest, exist_ok=True)
 
     # Backup config
@@ -94,7 +114,7 @@ def backup_data(config_path: str | None = None) -> str:
         shutil.copy2(src, os.path.join(dest, "config.json"))
 
     # Backup schema
-    schema = os.path.join(_HERE, "config", "config.json.schema")
+    schema = _schema_path()
     if os.path.exists(schema):
         shutil.copy2(schema, os.path.join(dest, "config.json.schema"))
 
@@ -138,31 +158,50 @@ def setup_logging(log_dir: str, verbose: bool = False) -> str:
 
 def _handle_init() -> None:
     """Bootstrap the project: create config from the example + runtime dirs."""
-    from validate import find_schema_violation, resolve_schema_path
+    from src.validate import find_schema_violation, resolve_schema_path
 
-    example = os.path.join(_HERE, "config", "config.example.json")
-    target = _config_path()
+    c_dir = config_dir()
+    target = os.path.join(c_dir, "config.json")
 
     if os.path.exists(target):
         print(f"Config already exists: {target}")
         print("Leaving it untouched. Edit it to match your printers.")
         return
 
-    if not os.path.exists(example):
-        print(f"ERROR: Example config not found: {example}", file=sys.stderr)
-        sys.exit(2)
+    # Ensure the config directory exists
+    os.makedirs(c_dir, exist_ok=True)
 
-    shutil.copy2(example, target)
+    if FROZEN:
+        # Frozen exe: write config.example.json + schema from baked-in strings
+        example_path = os.path.join(c_dir, "config.example.json")
+        with open(example_path, "w", encoding="utf-8") as f:
+            f.write(EMBEDDED_CONFIG_EXAMPLE)
+        schema_path = os.path.join(c_dir, "config.json.schema")
+        with open(schema_path, "w", encoding="utf-8") as f:
+            f.write(EMBEDDED_SCHEMA)
+        print(f"Wrote embedded config example to {example_path}")
+    else:
+        example_path = os.path.join(_HERE, "config", "config.example.json")
+        if not os.path.exists(example_path):
+            print(f"ERROR: Example config not found: {example_path}", file=sys.stderr)
+            sys.exit(2)
+        # Also copy schema into config_dir so validation can find it
+        src_schema = os.path.join(_HERE, "config", "config.json.schema")
+        dst_schema = os.path.join(c_dir, "config.json.schema")
+        if os.path.exists(src_schema) and not os.path.exists(dst_schema):
+            shutil.copy2(src_schema, dst_schema)
 
-    # Runtime dirs are gitignored and needed before db/collection work
-    for d in (os.path.join(_HERE, "data"), os.path.join(_HERE, "logs"), _backups_dir()):
+    shutil.copy2(example_path, target)
+
+    # Runtime dirs are needed before db/collection work
+    for d in (data_dir(), logs_dir(), backups_dir()):
         os.makedirs(d, exist_ok=True)
 
     print(f"Created {target}")
-    print("Created runtime directories: data/, data/backups/, logs/")
+    print(f"Created runtime directories: {data_dir()}/, {backups_dir()}/, {logs_dir()}/")
 
     # The copied config carries a $schema link - confirm it validates
-    schema_path = resolve_schema_path(target)
+    schema_path = resolve_schema_path(target, _schema_path())
     try:
         with open(target, encoding="utf-8") as f:
             cfg = json.load(f)
@@ -176,9 +215,14 @@ def _handle_init() -> None:
     except Exception as e:
         print(f"WARNING: could not validate copied config: {e}")
 
-    print("Edit config/config.json with your printers, then run:")
-    print("  python main.py --validate  # check everything is set up")
-    print("  python main.py --collect")
+    if FROZEN:
+        print(f"\nEdit {target} with your printers, then run:")
+        print("  lpm --validate  # check everything is set up")
+        print("  lpm --collect")
+    else:
+        print("\nEdit config/config.json with your printers, then run:")
+        print("  python main.py --validate  # check everything is set up")
+        print("  python main.py --collect")
 
 
 # ── collect ──────────────────────────────────────────────────────────
@@ -295,11 +339,11 @@ def _handle_collect(args: argparse.Namespace) -> None:
 
 
 def _handle_validate(args: argparse.Namespace) -> None:
-    from validate import Issue, validate_network, validate_setup
+    from src.validate import Issue, validate_network, validate_setup
 
     config_path = args.config or _config_path()
 
-    issues: list[Issue] = validate_setup(config_path, _HERE)
+    issues: list[Issue] = validate_setup(config_path, _project_root())
 
     if args.network:
         with contextlib.suppress(SystemExit):
@@ -319,14 +363,14 @@ def _handle_validate(args: argparse.Namespace) -> None:
 
 
 def _handle_report(args: argparse.Namespace) -> None:
-    from report import compute_weekly, export_csv, print_report
+    from src.report import compute_weekly, export_csv, print_report
 
     config = load_config(args.config)
     backup_data(args.config)
     from_date = args.from_date or datetime.now().strftime("%Y-%m-%d")
     to_date = args.to_date or datetime.now().strftime("%Y-%m-%d")
 
-    weeks = compute_weekly(config, from_date, to_date)
+    weeks = compute_weekly(config, from_date, to_date, root=_project_root())
 
     if args.csv:
         path = os.path.join(_project_root(), f"report_{from_date}_to_{to_date}.csv")
@@ -335,41 +379,22 @@ def _handle_report(args: argparse.Namespace) -> None:
         print_report(weeks, config)
 
 
-# ── test ─────────────────────────────────────────────────────────────
-
-
-def _handle_test() -> None:
-    import unittest
-
-    test_dir = os.path.join(_SRC, "_tests_")
-    if not os.path.isdir(test_dir):
-        print(f"ERROR: Test directory not found: {test_dir}", file=sys.stderr)
-        sys.exit(2)
-    loader = unittest.TestLoader()
-    suite = loader.discover(test_dir, pattern="test_*.py", top_level_dir=_SRC)
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    failed = len(result.failures)
-    errors = len(result.errors)
-    sys.exit(1 if (failed or errors) else 0)
-
-
 # ── entry point ──────────────────────────────────────────────────────
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
+        prog="lpm" if FROZEN else None,
         description="Printer statistics - collect & report",
         epilog="Run with no flags to see this help message.",
     )
 
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
-        "--init", action="store_true", help="Create config/config.json from the example"
+        "--init", action="store_true", help="Create config from the example"
     )
     mode.add_argument("--collect", action="store_true", help="Collect statistics from all printers")
     mode.add_argument("--report", action="store_true", help="Generate a weekly statistics report")
-    mode.add_argument("--test", action="store_true", help="Run all tests")
     mode.add_argument(
         "--validate", action="store_true", help="Check that the project is set up correctly"
     )
@@ -402,8 +427,6 @@ def main() -> None:
         _handle_collect(args)
     elif args.report:
         _handle_report(args)
-    elif args.test:
-        _handle_test()
     elif args.validate:
         _handle_validate(args)
     else:

@@ -10,7 +10,7 @@ import argparse
 import sys
 from typing import Any
 
-from snmp_client import (
+from src.snmp_client import (
     TAG_COUNTER32,
     TAG_GAUGE32,
     TAG_INTEGER,

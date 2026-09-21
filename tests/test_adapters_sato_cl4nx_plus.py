@@ -16,14 +16,14 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.sato_cl4nx_plus import (
+from src.adapters.sato_cl4nx_plus import (
     OID_METERS,
     OID_REACHABILITY,
     OID_UNIT,
     UNIT_MAP,
     SatoCL4NXPlusAdapter,
 )
-from snmp_client import TAG_COUNTER32, TAG_INTEGER, TAG_OCTET_STRING
+from src.snmp_client import TAG_COUNTER32, TAG_INTEGER, TAG_OCTET_STRING
 
 
 class TestSatoCL4NXPlusAdapter(unittest.TestCase):
