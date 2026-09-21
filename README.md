@@ -88,6 +88,14 @@ python main.py --report --csv                              # export CSV
 python main.py --test
 ```
 
+### Lint & type-check
+
+```bash
+ruff check .            # lint (fast)
+ruff format .           # auto-format
+mypy                    # strict type check (config in pyproject.toml)
+```
+
 ### Validate setup
 
 ```bash
@@ -204,7 +212,6 @@ src/
   db.py                 # SQLite storage layer
   report.py             # weekly report generator (library)
   snmp_client.py        # pysnmp wrapper
-  seed_fake_data.py     # test data seeder
   snmpget.py            # single OID query tool
   snmpwalk.py           # OID subtree walker
   validate.py           # setup validation (config, schema, printers, DB)
