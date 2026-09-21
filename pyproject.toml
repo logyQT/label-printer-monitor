@@ -3,8 +3,6 @@
 #   ruff check .            -> lint (fast)
 #   ruff format .           -> auto-format
 #   mypy                    -> strict type check
-#
-# See README "Development: linting & type safety" for details.
 
 [tool.ruff]
 target-version = "py313"
