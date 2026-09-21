@@ -261,9 +261,9 @@ def _collect_one(
     return collect_printer(adapter, printer_cfg)
 
 
-def run_collection(config: Config) -> tuple[int, int, int]:
+def run_collection(config: Config, dry: bool = False) -> tuple[int, int, int]:
     db_path = _db_path(config)
-    conn = db.init_db(db_path)
+    conn = db.init_db(db_path) if not dry else None
     snmp_config = config.get("snmp", {})
     community = snmp_config.get("community", "public")
     timeout = snmp_config.get("timeout_sec", 3)
@@ -305,13 +305,14 @@ def run_collection(config: Config) -> tuple[int, int, int]:
                 fail += 1
                 continue
 
-            db.save_snapshot(
-                conn,
-                printer_ip=ip,
-                labels_total=counters.get("labels_total"),
-                meters_total=counters.get("meters_total"),
-                model_name=counters.get("model_name", ""),
-            )
+            if not dry:
+                db.save_snapshot(
+                    conn,
+                    printer_ip=ip,
+                    labels_total=counters.get("labels_total"),
+                    meters_total=counters.get("meters_total"),
+                    model_name=counters.get("model_name", ""),
+                )
             success += 1
             labels = counters.get("labels_total")
             meters = counters.get("meters_total")
@@ -319,18 +320,22 @@ def run_collection(config: Config) -> tuple[int, int, int]:
             meters_str = f"{meters:,.1f} m" if meters is not None else "n/a"
             log.info(f"{model} ({ip}) [{location}] - labels: {labels_str}, odometer: {meters_str}")
 
-    db.close_db(conn)
+    if conn:
+        db.close_db(conn)
     log.info(f"Collection complete: {success}/{total} success, {fail}/{total} failed")
     return success, fail, total
 
 
 def _handle_collect(args: argparse.Namespace) -> None:
     config = load_config(args.config)
-    backup_data(args.config)
+    if not args.dry:
+        backup_data(args.config)
     log_dir = os.path.join(_project_root(), config.get("log_dir", "logs"))
     log_file = setup_logging(log_dir, verbose=args.verbose)
     log.info(f"Log file: {log_file}")
-    run_collection(config)
+    if args.dry:
+        log.info("DRY RUN - collecting but not saving to database")
+    run_collection(config, dry=args.dry)
 
 
 # ── validate ──────────────────────────────────────────────────────────
@@ -404,6 +409,9 @@ def main() -> None:
     # Collect-specific flags
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose output (--collect: SNMP debug, --validate: include OKs)"
+    )
+    parser.add_argument(
+        "--dry", action="store_true", help="(collect) Dry run: collect but don't save to database"
     )
 
     # Config selection (all modes)
