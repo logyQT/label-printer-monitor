@@ -55,7 +55,9 @@ class TestSatoCL4NXPlusAdapter(unittest.TestCase):
 
     @patch.object(SatoCL4NXPlusAdapter, "_snmp_get_retry")
     @patch.object(SatoCL4NXPlusAdapter, "_snmp_get")
-    def test_full_response_with_known_unit(self, mock_get: MagicMock, mock_retry: MagicMock) -> None:
+    def test_full_response_with_known_unit(
+        self, mock_get: MagicMock, mock_retry: MagicMock
+    ) -> None:
         """Sato with meters and a known unit code (5 = linearMeters)."""
         adapter = self._make_adapter()
         mock_get.return_value = (b"SATO CL4NX Plus", TAG_OCTET_STRING)

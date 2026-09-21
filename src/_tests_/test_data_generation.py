@@ -19,10 +19,14 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from typing import TYPE_CHECKING
+
 import db
-from adapters.base import CounterResult
 from adapters.zebra_zt411 import ZebraZT411Adapter
 from snmp_client import TAG_COUNTER32, TAG_OCTET_STRING
+
+if TYPE_CHECKING:
+    from adapters.base import CounterResult
 
 
 class TestCounterEdgeCases(unittest.TestCase):
@@ -78,10 +82,7 @@ class TestCounterEdgeCases(unittest.TestCase):
         labels = None
         meters = None
         # Delta with None should be None, not crash
-        if labels is not None and meters is not None:
-            delta = labels - 0
-        else:
-            delta = None
+        delta = labels - 0 if labels is not None and meters is not None else None
         self.assertIsNone(delta)
 
     def test_negative_delta_counter_reset(self) -> None:
@@ -253,7 +254,6 @@ class TestMeterUnitInterpretation(unittest.TestCase):
 
     def test_linear_meters_meaning(self) -> None:
         """linearMeters: value is in meters."""
-        meters_value = 125.5
         unit = "linearMeters"
         # 125.5 linearMeters = 125.5 meters
         self.assertEqual(unit, "linearMeters")
@@ -335,7 +335,9 @@ class TestRealisticPrinterResponses(unittest.TestCase):
 
     @patch.object(ZebraZT411Adapter, "_snmp_get_retry")
     @patch.object(ZebraZT411Adapter, "_snmp_get")
-    def test_printer_with_garbage_model_name(self, mock_get: MagicMock, mock_retry: MagicMock) -> None:
+    def test_printer_with_garbage_model_name(
+        self, mock_get: MagicMock, mock_retry: MagicMock
+    ) -> None:
         """Printer returns non-standard model name."""
         mock_get.return_value = (b"UNKNOWN\x00\x01\x02", TAG_OCTET_STRING)
         mock_retry.side_effect = [(None, None), (None, None)]

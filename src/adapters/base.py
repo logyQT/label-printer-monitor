@@ -12,7 +12,7 @@ import time
 from abc import ABC
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, Self, TypeAlias, TypedDict, cast
+from typing import Any, ClassVar, Literal, Self, TypedDict, cast
 
 log: logging.Logger = logging.getLogger("printer_stats")
 
@@ -44,7 +44,9 @@ class CounterResult(TypedDict):
 # What a Metric.convert may be: a passthrough (None), a built-in converter
 # name, a converter tuple ('regex', PATTERN) / ('map', MAP[, FALLBACK]), or an
 # arbitrary callable. The values are runtime-validated in convert_value().
-ConverterSpec: TypeAlias = None | Literal["int", "float", "str"] | tuple[Any, ...] | Callable[[Any], Any]
+type ConverterSpec = (
+    None | Literal["int", "float", "str"] | tuple[Any, ...] | Callable[[Any], Any]
+)
 
 
 def _to_str(value: Any) -> str:
@@ -136,7 +138,7 @@ class Metric:
     unit: str | None = None
 
 
-class PrinterAdapter(ABC):
+class PrinterAdapter(ABC):  # noqa: B024
     """Base class for printer adapters.
 
     Subclasses declare their SNMP behavior via class attributes:
@@ -213,7 +215,7 @@ class PrinterAdapter(ABC):
 
     # -- extension hooks ------------------------------------------------
 
-    def _collect_extra(self, result: dict[str, object]) -> None:
+    def _collect_extra(self, result: dict[str, object]) -> None:  # noqa: B027
         """Hook for adapter-specific additions to the counters result.
 
         Called at the end of get_counters() on reachable printers.

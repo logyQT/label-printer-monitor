@@ -144,7 +144,9 @@ def get_latest_snapshot(conn: sqlite3.Connection, printer_ip: str) -> Snapshot |
     return _row_to_dict(row)
 
 
-def get_snapshot_at(conn: sqlite3.Connection, printer_ip: str, timestamp: int | str) -> Snapshot | None:
+def get_snapshot_at(
+    conn: sqlite3.Connection, printer_ip: str, timestamp: int | str
+) -> Snapshot | None:
     """Get the snapshot closest to a specific timestamp.
 
     Args:

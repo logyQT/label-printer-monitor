@@ -75,7 +75,8 @@ def compute_weekly(config: dict[str, Any], from_date: str, to_date: str) -> Week
     for ip in ips:
         if ip not in model_map:
             row = conn.execute(
-                "SELECT model_name FROM snapshots WHERE printer_ip = ? AND model_name IS NOT NULL LIMIT 1",
+                "SELECT model_name FROM snapshots"
+                " WHERE printer_ip = ? AND model_name IS NOT NULL LIMIT 1",
                 (ip,),
             ).fetchone()
             if row:
@@ -107,7 +108,11 @@ def compute_weekly(config: dict[str, Any], from_date: str, to_date: str) -> Week
             first, last = data["first"], data["last"]
             unit = first[2] or last[2] or "unknown"
 
-            labels_d = (last[0] - first[0]) if first[0] is not None and last[0] is not None else None
+            labels_d = (
+                (last[0] - first[0])
+                if first[0] is not None and last[0] is not None
+                else None
+            )
             m_s = _convert_to_meters(first[1], unit)
             m_e = _convert_to_meters(last[1], unit)
             meters_d = (m_e - m_s) if m_s is not None and m_e is not None else None

@@ -16,13 +16,14 @@ Usage:
 
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import logging
 import os
 import shutil
 import sys
 from datetime import datetime
-from typing import Any, TypeAlias
+from typing import Any
 
 # Ensure src/ is on the path so library imports work
 _HERE: str = os.path.dirname(os.path.abspath(__file__))
@@ -36,7 +37,7 @@ from adapters.base import CounterResult, PrinterAdapter  # noqa: E402
 log: logging.Logger = logging.getLogger("printer_stats")
 
 # Runtime-validated against config.json.schema; see validate.py.
-Config: TypeAlias = dict[str, Any]
+type Config = dict[str, Any]
 
 
 # ── path helpers ─────────────────────────────────────────────────────
@@ -301,10 +302,8 @@ def _handle_validate(args: argparse.Namespace) -> None:
     issues: list[Issue] = validate_setup(config_path, _HERE)
 
     if args.network:
-        try:
+        with contextlib.suppress(SystemExit):
             issues += validate_network(load_config(args.config))
-        except SystemExit:
-            pass  # config missing – the setup issues already say so
 
     for level, message in issues:
         print(f"[{level}] {message}")
