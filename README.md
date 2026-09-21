@@ -1,49 +1,22 @@
 # Label Printer Monitor
 
-Collects print counters from Zebra and Sato label printers via SNMP, stores them in SQLite, and generates weekly reports.
-
-## Dependencies
-
-```
-pysnmp==7.1.29
-jsonschema==4.26.0
-```
+SNMP print counter collection for Zebra and Sato label printers. SQLite storage. Weekly reports.
 
 ## Setup
 
 ```bash
 pip install -r requirements.txt
+python main.py --init
 ```
 
-Create your config from the example (only `config/config.json` is read; it is gitignored):
-
-```bash
-python main.py --init    # recommended: copies example -> config + creates data/, logs/
-```
-
-(Or copy `config/config.example.json` to `config/config.json` by hand with your platform's
-copy command, then edit.)
-
-The config links to its schema via a `$schema` key, so editors with JSON Schema support
-(VS Code, IntelliJ, etc.) validate and autocomplete it; `python main.py --validate` uses
-the same link when choosing which schema to check against.
-
-Then edit `config/config.json` with your printers:
+Edit `config/config.json`:
 
 ```json
 {
-  "db": {
-    "filename": "printer_stats.db"
-  },
+  "db": { "filename": "printer_stats.db" },
   "log_dir": "logs",
-  "snmp": {
-    "community": "public",
-    "timeout_sec": 3,
-    "retries": 2
-  },
-  "collection": {
-    "max_concurrency": 20
-  },
+  "snmp": { "community": "public", "timeout_sec": 3, "retries": 2 },
+  "collection": { "max_concurrency": 20 },
   "printers": [
     { "ip": "10.0.1.10", "model": "Sato CL4NX Plus", "location": "Linia 1" },
     { "ip": "10.0.1.11", "model": "Zebra ZT411", "location": "Linia 2" },
@@ -52,125 +25,50 @@ Then edit `config/config.json` with your printers:
 }
 ```
 
-`collection.max_concurrency` (default 20) caps how many printers are polled at
-once, used by both `--collect` and `--validate --network`. Printers are
-checked in parallel, so a dead printer's SNMP timeout no longer stalls the rest
-of the fleet; healthy printers report back immediately while only a few workers
-wait on the unresponsive ones.
-
-Every command accepts `--config <path>` to read a different config file, e.g.
-`python main.py --collect --config other-config.json` - for testing alternate
-setups without touching the default `config/config.json`.
+All commands accept `--config <path>` for alternate configs.
 
 ## Usage
 
-`main.py` is the single entry point. Run with no flags to see help.
-
-### Collect data
-
 ```bash
-python main.py --init                       # first-time setup (config + dirs)
 python main.py --collect                    # collect from all printers
-python main.py --collect --verbose           # with SNMP debug output
-```
-
-### Generate report
-
-```bash
-python main.py --report                                    # current week
-python main.py --report --from 2026-09-01 --to 2026-09-30  # date range
-python main.py --report --csv                              # export CSV
-```
-
-### Run tests
-
-```bash
+python main.py --collect --verbose           # SNMP debug output
+python main.py --report                      # current week
+python main.py --report --from 2026-09-01 --to 2026-09-30
+python main.py --report --csv
+python main.py --validate                    # config + schema + DB checks
+python main.py --validate --network          # + ping printers over SNMP
 python main.py --test
 ```
 
-### Lint & type-check
-
-```bash
-ruff check .            # lint (fast)
-ruff format .           # auto-format
-mypy                    # strict type check (config in pyproject.toml)
-```
-
-### Validate setup
-
-```bash
-python main.py --validate            # local checks: config, schema, printers, DB
-python main.py --validate --network  # also ping each printer over SNMP
-```
-
-Exit code is 0 when everything is OK, 1 when any check fails.
+Lint: `ruff check .` / `ruff format .` / `mypy`
 
 ## Compiled binary
 
-The project can be compiled into a standalone `lpm.exe` with
-[Nuitka](https://nuitka.net/).  The binary bundles the Python interpreter and
-all dependencies.
-
-### Building
+Build with [Nuitka](https://nuitka.net/):
 
 ```bash
 pip install nuitka
 python build.py            # produces dist/lpm.exe
-python build.py --clean    # wipe build artifacts first
 ```
 
-### Adding to PATH
-
-Move the binary somewhere permanent, then add that directory to your `PATH` so
-`lpm` is available from any terminal session.
-
-**Windows (PowerShell, permanent):**
+Add to PATH (Windows PowerShell):
 
 ```powershell
-# Add dist/ to the user PATH (takes effect in new terminals)
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$newDir      = "C:\path\to\label-printer-monitor\dist"
-[Environment]::SetEnvironmentVariable("Path", "$currentPath;$newDir", "User")
-
-# Reload for the current session
-$env:Path = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$currentPath;C:\path\to\label-printer-monitor\dist", "User")
 ```
 
-**Linux / macOS (permanent):**
+Usage is identical, replace `python main.py` with `lpm`:
 
 ```bash
-echo 'export PATH="$PATH:/path/to/label-printer-monitor/dist"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### Using the compiled binary
-
-Once on `PATH` the commands mirror the Python usage exactly - just replace
-`python main.py` with `lpm`:
-
-```bash
-lpm --collect                    # collect from all printers
-lpm --collect --verbose           # with SNMP debug output
-lpm --report                      # current-week report
-lpm --report --from 2026-09-01 --to 2026-09-30
+lpm --collect
 lpm --report --csv
-lpm --validate                    # local checks
-lpm --validate --network          # ping each printer over SNMP
-lpm --test                        # run unit tests
+lpm --validate --network
 ```
 
-All flags (`--config`, `--verbose`, `--from`, `--to`, `--csv`, `--network`,
-`--test`) work identically to the Python entry point.
-
-## Automated collection
-
-Schedule two collections per day to cover both shifts:
+## Scheduling
 
 ### Linux (cron)
-
-```bash
-crontab -e
-```
 
 ```
 0 5 * * 1-5  cd /path/to/label-printer-monitor && python main.py --collect
@@ -189,92 +87,66 @@ Register-ScheduledTask -TaskName "PrinterStatsAM" -Action $action -Trigger $trig
 Register-ScheduledTask -TaskName "PrinterStatsPM" -Action $action -Trigger $trigger2 -Settings $settings
 ```
 
-## What gets collected
+## Supported printers
 
-All length values are standardized to **meters** at collection time via
-`src/converters.py`.  The adapter declares the raw SNMP unit (e.g. `cm`,
-`linearMeters`); the engine converts it before saving to the database.
+All values stored in **meters** (converted at collection time).
 
-| Printer         | Labels | Odometer (stored as meters) |
-| --------------- | ------ | --------------------------- |
-| Zebra ZT411     | yes    | yes (cm → m)               |
-| Zebra GX430t    | -      | yes (cm/in → m)            |
-| Sato CL4NX Plus | -      | yes (linearMeters/feet → m) |
+| Printer         | Labels | Odometer |
+| --------------- | ------ | -------- |
+| Zebra ZT411     | yes    | yes      |
+| Zebra GX430t    | -      | yes      |
+| Sato CL4NX Plus | -      | yes      |
 
-- Zebra ZT411: vendor OIDs under enterprise 10642
-- Zebra GX430t: usage string from 10642.200.17.7.0, centimeters preferred, inches as fallback
-- Sato: standard Printer MIB (RFC 3805), unit detected via `prtMarkerCounterUnit`
-- Sato does not expose label counts via SNMP
+## Adding an adapter
 
-## Adding a new printer adapter
-
-An adapter is a declarative class: it lists which OIDs to read and how to
-convert them. Copy one of the files in `src/adapters/` and declare the specs:
+Copy any file in `src/adapters/`, declare OIDs and converters:
 
 ```python
 from adapters.base import PrinterAdapter, Metric
 
-
 class ZebraZD621Adapter(PrinterAdapter):
-    model_prefixes = ("zebra zd621",)  # model strings this adapter serves
-    snmp_version = 1  # 0 = SNMPv1, 1 = SNMPv2c
-    reachability_oid = "1.3.6.1.4.1.10642.1.1.0"  # poke OID (model name)
+    model_prefixes = ("zebra zd621",)
+    snmp_version = 1
+    reachability_oid = "1.3.6.1.4.1.10642.1.1.0"
     metrics = (
         Metric("labels_total", oid="1.3.6.1.4.1.10642.3.1.6.0", convert="int"),
         Metric("meters_total", oid="1.3.6.1.4.1.10642.3.1.1.0", convert="float", unit="cm"),
     )
 ```
 
-`convert` accepts `'int'`, `'float'`, `'str'` (bytes-decoding), a
-`('regex', ...)` usage-string parser, a `('map', ...)` unit-code table, or any
-callable. The base class then handles the rest automatically: reachability
-(`reachability_oid`), the metric loop, backoff retries, and the standard
-`get_counters()` result (`labels_total`, `meters_total`, `meter_unit`,
-`model_name`, `reachable`).
-
-Then register the class in `src/adapters/__init__.py` (`ADAPTER_CLASSES`) and
-add the model to the `model` enum in `config/config.json.schema` so
-`--validate` knows about it.
+Register in `src/adapters/__init__.py` and add the model to `config/config.json.schema`.
 
 ## Database
 
-Single `snapshots` table:
+`snapshots` table:
 
-| Column       | Type    | Description                        |
-| ------------ | ------- | ---------------------------------- |
-| printer_ip   | TEXT    | Printer IP address                 |
-| timestamp    | INTEGER | Unix epoch                         |
-| labels_total | INTEGER | Labels printed this period         |
-| meters_total | REAL    | Media length in meters             |
-| meter_unit   | TEXT    | Always `"m"` (standardized at collection time) |
-| model_name   | TEXT    | Printer model                      |
+| Column       | Type    | Description                |
+| ------------ | ------- | -------------------------- |
+| printer_ip   | TEXT    | Printer IP                 |
+| timestamp    | INTEGER | Unix epoch                 |
+| labels_total | INTEGER | Labels printed             |
+| meters_total | REAL    | Media length in meters     |
+| meter_unit   | TEXT    | Always `"m"`               |
+| model_name   | TEXT    | Printer model              |
 
 ## Project structure
 
 ```
-main.py                 # single entry point (--collect / --report / --test)
-requirements.txt        # pinned dependencies
+main.py                 # entry point
 config/
-  config.json           # printer list + SNMP settings (gitignored, copy from example)
-  config.example.json   # starter config (safe to commit)
-  config.json.schema    # JSON Schema for config validation
+  config.json           # printer list + SNMP settings (gitignored)
+  config.example.json   # starter config
+  config.json.schema    # JSON Schema
 data/
   printer_stats.db      # SQLite database (gitignored)
   backups/              # auto-backup before each run (gitignored)
 logs/                   # per-run log files (gitignored)
 src/
-  adapters/
-    __init__.py         # adapter registry (ADAPTER_CLASSES, prefix matching)
-    base.py             # declarative adapter engine (Metric, converters)
-    zebra_zt411.py      # Zebra ZT411 (labels + meters)
-    zebra_gx430t.py     # Zebra GX430t (meters only, usage string)
-    sato_cl4nx_plus.py  # Sato CL4NX Plus (meters only, built-in unit map)
-  _tests_/              # unit tests
-  db.py                 # SQLite storage layer
-  report.py             # weekly report generator (library)
+  adapters/             # printer adapters (declarative SNMP specs)
+  converters.py         # unit conversion (cm/in/ft/mm -> meters)
+  db.py                 # SQLite storage
+  report.py             # weekly report generator
   snmp_client.py        # pysnmp wrapper
-  snmpget.py            # single OID query tool
-  snmpwalk.py           # OID subtree walker
-  validate.py           # setup validation (config, schema, printers, DB)
-  run_tests.py          # test runner (standalone)
+  validate.py           # setup validation
+build.py                # Nuitka build script
 ```
