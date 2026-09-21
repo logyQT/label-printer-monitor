@@ -91,7 +91,7 @@ Register-ScheduledTask -TaskName "PrinterStatsPM" -Action $action -Trigger $trig
 
 ## Supported printers
 
-All values stored in **meters** (converted at collection time).
+All length values stored in **meters** (converted at collection time).
 
 | Printer         | Labels | Odometer |
 | --------------- | ------ | -------- |
