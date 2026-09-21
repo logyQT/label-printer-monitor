@@ -151,4 +151,7 @@ src/
   snmp_client.py        # pysnmp wrapper
   validate.py           # setup validation
 build.py                # Nuitka build script
+tools/
+  snmpget.py            # single OID query (standalone)
+  snmpwalk.py           # OID subtree walker (standalone)
 ```
