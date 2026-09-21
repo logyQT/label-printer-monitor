@@ -5,7 +5,8 @@ SNMP print counter collection for Zebra and Sato label printers. SQLite storage.
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt          # runtime
+pip install -r requirements-dev.txt      # + linting, testing, building
 python main.py --init
 ```
 
@@ -47,7 +48,6 @@ Lint: `ruff check .` / `ruff format .` / `mypy`
 Build with [Nuitka](https://nuitka.net/):
 
 ```bash
-pip install nuitka
 python build.py            # produces dist/lpm.exe
 ```
 
