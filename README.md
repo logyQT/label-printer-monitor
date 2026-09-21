@@ -1,4 +1,4 @@
-# Printer Statistics Collector
+# Label Printer Monitor
 
 Collects print counters from Zebra and Sato label printers via SNMP, stores them in SQLite, and generates weekly reports.
 
@@ -53,13 +53,13 @@ Then edit `config/config.json` with your printers:
 ```
 
 `collection.max_concurrency` (default 20) caps how many printers are polled at
-once — used by both `--collect` and `--validate --network`. Printers are
+once, used by both `--collect` and `--validate --network`. Printers are
 checked in parallel, so a dead printer's SNMP timeout no longer stalls the rest
 of the fleet; healthy printers report back immediately while only a few workers
 wait on the unresponsive ones.
 
 Every command accepts `--config <path>` to read a different config file, e.g.
-`python main.py --collect --config other-config.json` — for testing alternate
+`python main.py --collect --config other-config.json` - for testing alternate
 setups without touching the default `config/config.json`.
 
 ## Usage
@@ -105,6 +105,63 @@ python main.py --validate --network  # also ping each printer over SNMP
 
 Exit code is 0 when everything is OK, 1 when any check fails.
 
+## Compiled binary
+
+The project can be compiled into a standalone `lpm.exe` with
+[Nuitka](https://nuitka.net/).  The binary bundles the Python interpreter and
+all dependencies.
+
+### Building
+
+```bash
+pip install nuitka
+python build.py            # produces dist/lpm.exe
+python build.py --clean    # wipe build artifacts first
+```
+
+### Adding to PATH
+
+Move the binary somewhere permanent, then add that directory to your `PATH` so
+`lpm` is available from any terminal session.
+
+**Windows (PowerShell, permanent):**
+
+```powershell
+# Add dist/ to the user PATH (takes effect in new terminals)
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$newDir      = "C:\path\to\label-printer-monitor\dist"
+[Environment]::SetEnvironmentVariable("Path", "$currentPath;$newDir", "User")
+
+# Reload for the current session
+$env:Path = [Environment]::GetEnvironmentVariable("Path", "User")
+```
+
+**Linux / macOS (permanent):**
+
+```bash
+echo 'export PATH="$PATH:/path/to/label-printer-monitor/dist"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Using the compiled binary
+
+Once on `PATH` the commands mirror the Python usage exactly - just replace
+`python main.py` with `lpm`:
+
+```bash
+lpm --collect                    # collect from all printers
+lpm --collect --verbose           # with SNMP debug output
+lpm --report                      # current-week report
+lpm --report --from 2026-09-01 --to 2026-09-30
+lpm --report --csv
+lpm --validate                    # local checks
+lpm --validate --network          # ping each printer over SNMP
+lpm --test                        # run unit tests
+```
+
+All flags (`--config`, `--verbose`, `--from`, `--to`, `--csv`, `--network`,
+`--test`) work identically to the Python entry point.
+
 ## Automated collection
 
 Schedule two collections per day to cover both shifts:
@@ -116,14 +173,14 @@ crontab -e
 ```
 
 ```
-0 5 * * 1-5  cd /path/to/statystki-drukarki && python main.py --collect
-0 15 * * 1-5 cd /path/to/statystki-drukarki && python main.py --collect
+0 5 * * 1-5  cd /path/to/label-printer-monitor && python main.py --collect
+0 15 * * 1-5 cd /path/to/label-printer-monitor && python main.py --collect
 ```
 
 ### Windows (Task Scheduler)
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "python" -Argument "main.py --collect" -WorkingDirectory "C:\path\to\statystki-drukarki"
+$action = New-ScheduledTaskAction -Execute "python" -Argument "main.py --collect" -WorkingDirectory "C:\path\to\label-printer-monitor"
 $trigger1 = New-ScheduledTaskTrigger -Daily -At "05:00"
 $trigger2 = New-ScheduledTaskTrigger -Daily -At "15:00"
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
@@ -134,15 +191,19 @@ Register-ScheduledTask -TaskName "PrinterStatsPM" -Action $action -Trigger $trig
 
 ## What gets collected
 
-| Printer | Labels | Odometer |
-|---------|--------|----------|
-| Zebra ZT411 | yes | yes (cm -> m) |
-| Zebra GX430t | - | yes (cm -> m, in fallback) |
-| Sato CL4NX Plus | - | yes (m) |
+All length values are standardized to **meters** at collection time via
+`src/converters.py`.  The adapter declares the raw SNMP unit (e.g. `cm`,
+`linearMeters`); the engine converts it before saving to the database.
+
+| Printer         | Labels | Odometer (stored as meters) |
+| --------------- | ------ | --------------------------- |
+| Zebra ZT411     | yes    | yes (cm → m)               |
+| Zebra GX430t    | -      | yes (cm/in → m)            |
+| Sato CL4NX Plus | -      | yes (linearMeters/feet → m) |
 
 - Zebra ZT411: vendor OIDs under enterprise 10642
-- Zebra GX430t: usage string from 10642.200.17.7.0 - centimeters preferred, inches only as fallback
-- Sato: standard Printer MIB (RFC 3805)
+- Zebra GX430t: usage string from 10642.200.17.7.0, centimeters preferred, inches as fallback
+- Sato: standard Printer MIB (RFC 3805), unit detected via `prtMarkerCounterUnit`
 - Sato does not expose label counts via SNMP
 
 ## Adding a new printer adapter
@@ -179,14 +240,14 @@ add the model to the `model` enum in `config/config.json.schema` so
 
 Single `snapshots` table:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| printer_ip | TEXT | Printer IP address |
-| timestamp | INTEGER | Unix epoch |
-| labels_total | INTEGER | Labels printed this period |
-| meters_total | REAL | Media length (raw unit) |
-| meter_unit | TEXT | Unit from printer (cm/m) |
-| model_name | TEXT | Printer model |
+| Column       | Type    | Description                        |
+| ------------ | ------- | ---------------------------------- |
+| printer_ip   | TEXT    | Printer IP address                 |
+| timestamp    | INTEGER | Unix epoch                         |
+| labels_total | INTEGER | Labels printed this period         |
+| meters_total | REAL    | Media length in meters             |
+| meter_unit   | TEXT    | Always `"m"` (standardized at collection time) |
+| model_name   | TEXT    | Printer model                      |
 
 ## Project structure
 

@@ -70,7 +70,7 @@ class TestCollectPrinter(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-            "meter_unit": "cm",
+            "meter_unit": "m",
             "model_name": "Zebra ZT230",
             "reachable": True,
         }
@@ -84,7 +84,7 @@ class TestCollectPrinter(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": None,
             "meters_total": None,
-            "meter_unit": "unknown",
+            "meter_unit": "m",
             "model_name": "",
             "reachable": False,
         }
@@ -119,7 +119,7 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-            "meter_unit": "cm",
+            "meter_unit": "m",
             "model_name": "Zebra ZT230",
             "reachable": True,
         }
@@ -135,7 +135,7 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": None,
             "meters_total": None,
-            "meter_unit": "unknown",
+            "meter_unit": "m",
             "model_name": "",
             "reachable": False,
         }
@@ -151,7 +151,7 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-            "meter_unit": "cm",
+            "meter_unit": "m",
             "model_name": "Zebra ZT230",
             "reachable": True,
         }
@@ -183,7 +183,7 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-            "meter_unit": "cm",
+            "meter_unit": "m",
             "model_name": "Zebra ZT230",
             "reachable": True,
         }

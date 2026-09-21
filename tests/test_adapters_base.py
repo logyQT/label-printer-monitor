@@ -15,7 +15,7 @@ class ConcretePrinterAdapter(PrinterAdapter):
         return CounterResult(
             labels_total=None,
             meters_total=None,
-            meter_unit="unknown",
+            meter_unit="m",
             model_name="",
             reachable=True,
         )
@@ -29,7 +29,7 @@ class FailingPrinterAdapter(PrinterAdapter):
         return CounterResult(
             labels_total=None,
             meters_total=None,
-            meter_unit="unknown",
+            meter_unit="m",
             model_name="",
             reachable=False,
         )

@@ -14,6 +14,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Self, TypedDict, cast
 
+from src.converters import to_meters
+
 log: logging.Logger = logging.getLogger("printer_stats")
 
 # Keys every get_counters() result must contain — the contract with
@@ -182,11 +184,15 @@ class PrinterAdapter(ABC):  # noqa: B024
     def get_counters(self) -> CounterResult:
         """Query the printer and return counters.
 
+        All length values are standardized to **meters** at collection time.
+        ``meter_unit`` is always ``"m"`` in the result so that the database
+        stores a consistent unit regardless of what the printer firmware reports.
+
         Always returns the METRIC_KEYS contract keys. Reachability is checked
         first; metrics are only polled once the printer responds.
         """
         result: dict[str, object] = {key: None for key in METRIC_KEYS}
-        result.update({"meter_unit": "unknown", "model_name": "", "reachable": False})
+        result.update({"meter_unit": "m", "model_name": "", "reachable": False})
 
         model, _ = self._snmp_get(self.reachability_oid, label="poke")
         if model is None:
@@ -201,9 +207,12 @@ class PrinterAdapter(ABC):  # noqa: B024
             value = convert_value(raw, spec.convert)
             if value is None:
                 continue
+
+            # Convert length values to meters at collection time.
+            if spec.key == "meters_total" and spec.unit:
+                value = to_meters(value, spec.unit)
+
             result[spec.key] = value
-            if spec.unit and result.get("meter_unit") == "unknown":
-                result["meter_unit"] = spec.unit
 
         self._collect_extra(result)
         return cast("CounterResult", result)

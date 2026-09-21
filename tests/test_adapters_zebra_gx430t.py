@@ -49,7 +49,7 @@ class TestZebraGX430tAdapter(unittest.TestCase):
         # No counters available
         self.assertIsNone(result["labels_total"])
         self.assertIsNone(result["meters_total"])
-        self.assertEqual(result["meter_unit"], "unknown")
+        self.assertEqual(result["meter_unit"], "m")
 
     @patch.object(ZebraGX430tAdapter, "_snmp_get")
     def test_unreachable_printer(self, mock_get: MagicMock) -> None:

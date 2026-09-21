@@ -54,8 +54,8 @@ class TestZebraZT411Adapter(unittest.TestCase):
 
         self.assertTrue(result["reachable"])
         self.assertEqual(result["labels_total"], 15234)
-        self.assertEqual(result["meters_total"], 761700.0)
-        self.assertEqual(result["meter_unit"], "cm")
+        self.assertAlmostEqual(result["meters_total"], 7617.0)  # 761700 cm → 7617.0 m
+        self.assertEqual(result["meter_unit"], "m")
         self.assertEqual(result["model_name"], "ZTC ZT411-203dpi ZPL")
 
     @patch.object(ZebraZT411Adapter, "_snmp_get_retry")
@@ -72,7 +72,7 @@ class TestZebraZT411Adapter(unittest.TestCase):
         self.assertTrue(result["reachable"])
         self.assertEqual(result["labels_total"], 8901)
         self.assertIsNone(result["meters_total"])
-        self.assertEqual(result["meter_unit"], "unknown")
+        self.assertEqual(result["meter_unit"], "m")
 
     @patch.object(ZebraZT411Adapter, "_snmp_get")
     def test_unreachable_printer(self, mock_get: MagicMock) -> None:

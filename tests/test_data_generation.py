@@ -127,10 +127,10 @@ class TestDeltaCalculation(unittest.TestCase):
     def test_normal_delta(self) -> None:
         """Normal shift: printer printed some labels."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1150, 57.5, "cm", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
+            self.conn, "10.0.0.1", 1150, 57.5, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
         )
         delta = db.get_shift_delta(
             self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
@@ -142,10 +142,10 @@ class TestDeltaCalculation(unittest.TestCase):
     def test_zero_delta_idle_printer(self) -> None:
         """Printer was idle during the shift."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 5000, 250.0, "cm", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
+            self.conn, "10.0.0.1", 5000, 250.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 5000, 250.0, "cm", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
+            self.conn, "10.0.0.1", 5000, 250.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
         )
         delta = db.get_shift_delta(
             self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
@@ -166,7 +166,7 @@ class TestDeltaCalculation(unittest.TestCase):
             timestamp="2026-09-17T06:00:00",
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 5.0, "cm", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
+            self.conn, "10.0.0.1", 100, 5.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
         )
         delta = db.get_shift_delta(
             self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
@@ -178,7 +178,7 @@ class TestDeltaCalculation(unittest.TestCase):
     def test_missing_start_snapshot(self) -> None:
         """No snapshot at shift start."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
         )
         delta = db.get_shift_delta(
             self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
@@ -188,7 +188,7 @@ class TestDeltaCalculation(unittest.TestCase):
     def test_missing_end_snapshot(self) -> None:
         """No snapshot at shift end - get_snapshot_at returns closest-before."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
         )
         delta = db.get_shift_delta(
             self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
@@ -212,7 +212,7 @@ class TestDeltaCalculation(unittest.TestCase):
             self.conn, "10.0.0.1", None, None, "unknown", "", timestamp="2026-09-17T06:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
         )
         delta = db.get_shift_delta(
             self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
@@ -225,7 +225,7 @@ class TestDeltaCalculation(unittest.TestCase):
     def test_same_timestamp_start_end(self) -> None:
         """Start and end timestamps are the same."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
         )
         delta = db.get_shift_delta(
             self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T06:00:00"
@@ -238,10 +238,10 @@ class TestDeltaCalculation(unittest.TestCase):
     def test_closest_snapshot_used(self) -> None:
         """get_snapshot_at should use closest snapshot before target."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 5.0, "cm", "Zebra ZT230", timestamp="2026-09-17T05:55:00"
+            self.conn, "10.0.0.1", 100, 5.0, "m", "Zebra ZT230", timestamp="2026-09-17T05:55:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 10.0, "cm", "Zebra ZT230", timestamp="2026-09-17T06:05:00"
+            self.conn, "10.0.0.1", 200, 10.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:05:00"
         )
         # Query for 06:00 - should get 05:55 snapshot (closest before)
         snap = db.get_snapshot_at(self.conn, "10.0.0.1", "2026-09-17T06:00:00")
@@ -250,16 +250,16 @@ class TestDeltaCalculation(unittest.TestCase):
 
 
 class TestMeterUnitInterpretation(unittest.TestCase):
-    """Tests for how meter_unit affects data interpretation."""
+    """Tests for unit interpretation (conversion now at collection time in converters.py)."""
 
     def test_linear_meters_meaning(self) -> None:
-        """linearMeters: value is in meters."""
+        """linearMeters: value is in meters (passthrough conversion)."""
         unit = "linearMeters"
         # 125.5 linearMeters = 125.5 meters
         self.assertEqual(unit, "linearMeters")
 
     def test_linear_feet_conversion(self) -> None:
-        """linearFeet: value is in feet, can convert to meters."""
+        """linearFeet: value is in feet, converted to meters at collection time."""
         feet = 100.0
         meters = feet * 0.3048
         self.assertAlmostEqual(meters, 30.48, places=2)
@@ -271,28 +271,20 @@ class TestMeterUnitInterpretation(unittest.TestCase):
         # These measure different things
         self.assertNotEqual(sheets_count, linear_meters)
 
-    def test_assumed_cm_fallback(self) -> None:
-        """When vendor OID available but no unit OID, assume cm."""
-        unit = "cm (assumed)"
-        self.assertIn("assumed", unit)
-        # Should be flagged for verification
-        needs_verification = "assumed" in unit
-        self.assertTrue(needs_verification)
-
     def test_unit_consistency_across_snapshots(self) -> None:
-        """Unit should be consistent across snapshots for same printer."""
+        """All snapshots are stored with meter_unit='m' after collection-time conversion."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 100, 5.0, "cm", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
+            conn, "10.0.0.1", 100, 5.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
         )
         db.save_snapshot(
-            conn, "10.0.0.1", 200, 10.0, "cm", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
+            conn, "10.0.0.1", 200, 10.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
         )
         history = db.get_history(conn, "10.0.0.1")
         units = [s["meter_unit"] for s in history]
-        # All units should be the same
+        # All units should be "m" (standardized at collection time)
         self.assertEqual(len(set(units)), 1)
-        self.assertEqual(units[0], "cm")
+        self.assertEqual(units[0], "m")
         db.close_db(conn)
 
 
@@ -315,7 +307,7 @@ class TestRealisticPrinterResponses(unittest.TestCase):
 
         self.assertTrue(result["reachable"])
         self.assertEqual(result["labels_total"], 15234)
-        self.assertEqual(result["meters_total"], 50000.0)
+        self.assertEqual(result["meters_total"], 500.0)  # 50000 cm → 500.0 m
         self.assertEqual(result["model_name"], "ZTC ZT230-200dpi ZPL")
 
     @patch.object(ZebraZT411Adapter, "_snmp_get_retry")
@@ -381,11 +373,11 @@ class TestDataPipeline(unittest.TestCase):
         """Simulate: SNMP response → adapter → DB storage."""
         conn = db.init_db(":memory:")
 
-        # Simulate what adapter.get_counters() would return
+        # Simulate what adapter.get_counters() would return (values in meters)
         counters: CounterResult = {
             "labels_total": 15234,
-            "meters_total": 761700.0,
-            "meter_unit": "linearMeters",
+            "meters_total": 7617.0,  # already converted from cm at collection time
+            "meter_unit": "m",
             "model_name": "ZTC ZT230-200dpi ZPL",
             "reachable": True,
         }
@@ -405,8 +397,8 @@ class TestDataPipeline(unittest.TestCase):
         snap = db.get_latest_snapshot(conn, "192.168.40.249")
         assert snap is not None
         self.assertEqual(snap["labels_total"], 15234)
-        self.assertEqual(snap["meters_total"], 761700.0)
-        self.assertEqual(snap["meter_unit"], "linearMeters")
+        self.assertEqual(snap["meters_total"], 7617.0)
+        self.assertEqual(snap["meter_unit"], "m")
         self.assertEqual(snap["model_name"], "ZTC ZT230-200dpi ZPL")
         db.close_db(conn)
 
@@ -419,7 +411,7 @@ class TestDataPipeline(unittest.TestCase):
         meters = 50.5
 
         db.save_snapshot(
-            conn, "10.0.0.1", labels, meters, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", labels, meters, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
 
         snap = db.get_latest_snapshot(conn, "10.0.0.1")
@@ -435,8 +427,8 @@ class TestDataPipeline(unittest.TestCase):
         conn = db.init_db(":memory:")
 
         ts = "2026-09-17T10:00:00"
-        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra", timestamp=ts)
-        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra", timestamp=ts)
+        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp=ts)
+        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp=ts)
 
         history = db.get_history(conn, "10.0.0.1")
         self.assertEqual(len(history), 1)
@@ -448,11 +440,11 @@ class TestDataPipeline(unittest.TestCase):
 
         # Shift start
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra", timestamp="2026-09-17T06:00:00"
+            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T06:00:00"
         )
         # Shift end
         db.save_snapshot(
-            conn, "10.0.0.1", 1150, 57.5, "cm", "Zebra", timestamp="2026-09-17T14:00:00"
+            conn, "10.0.0.1", 1150, 57.5, "m", "Zebra", timestamp="2026-09-17T14:00:00"
         )
 
         delta = db.get_shift_delta(conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00")
@@ -542,13 +534,13 @@ class TestMultiPrinterAggregation(unittest.TestCase):
     def test_sum_across_printers(self) -> None:
         """Sum labels from all printers."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", 2000, 100.0, "cm", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.2", 2000, 100.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.3", 500, 25.0, "cm", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.3", 500, 25.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
 
         latest = db.get_all_printers_latest(self.conn)
@@ -560,13 +552,13 @@ class TestMultiPrinterAggregation(unittest.TestCase):
     def test_average_per_printer(self) -> None:
         """Average meters per printer."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 100.0, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 1000, 100.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", 2000, 200.0, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.2", 2000, 200.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.3", 1500, 150.0, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.3", 1500, 150.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
 
         latest = db.get_all_printers_latest(self.conn)
@@ -577,7 +569,7 @@ class TestMultiPrinterAggregation(unittest.TestCase):
     def test_exclude_unreachable_printers(self) -> None:
         """Unreachable printers should be excluded from totals."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
             self.conn, "10.0.0.2", None, None, "unknown", "", timestamp="2026-09-17T10:00:00"
@@ -592,16 +584,16 @@ class TestMultiPrinterAggregation(unittest.TestCase):
     def test_shift_delta_all_printers(self) -> None:
         """Shift deltas for all printers."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra", timestamp="2026-09-17T06:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T06:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1100, 55.0, "cm", "Zebra", timestamp="2026-09-17T14:00:00"
+            self.conn, "10.0.0.1", 1100, 55.0, "m", "Zebra", timestamp="2026-09-17T14:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", 2000, 100.0, "cm", "Zebra", timestamp="2026-09-17T06:00:00"
+            self.conn, "10.0.0.2", 2000, 100.0, "m", "Zebra", timestamp="2026-09-17T06:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", 2200, 110.0, "cm", "Zebra", timestamp="2026-09-17T14:00:00"
+            self.conn, "10.0.0.2", 2200, 110.0, "m", "Zebra", timestamp="2026-09-17T14:00:00"
         )
 
         results = db.get_printers_by_shift(self.conn, "2026-09-17T06:00:00", "2026-09-17T14:00:00")
@@ -619,7 +611,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """labels_total should be stored as INTEGER in SQLite."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
         cursor = conn.execute(
             "SELECT typeof(labels_total) FROM snapshots WHERE printer_ip='10.0.0.1'"
@@ -632,7 +624,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """meters_total should be stored as REAL in SQLite."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.5, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.5, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
         cursor = conn.execute(
             "SELECT typeof(meters_total) FROM snapshots WHERE printer_ip='10.0.0.1'"
@@ -645,7 +637,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """Model should be stored as TEXT."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
         cursor = conn.execute(
             "SELECT typeof(model_name) FROM snapshots WHERE printer_ip='10.0.0.1'"
@@ -658,7 +650,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """Integer meters should be stored and retrieved as float."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "cm", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
         )
         snap = db.get_latest_snapshot(conn, "10.0.0.1")
         # Even though we passed 50.0 (float), it should be retrievable

@@ -28,14 +28,6 @@ def _to_epoch(date_str: str) -> int:
     return int(datetime.fromisoformat(date_str).timestamp())
 
 
-def _convert_to_meters(value: int | float | None, unit: str) -> int | float | None:
-    if value is None:
-        return None
-    return {"cm": value / 100.0, "m": value, "mm": value / 1000.0, "in": value * 0.0254}.get(
-        unit, value
-    )
-
-
 def _week_label(epoch: int) -> str:
     dt = datetime.fromtimestamp(epoch, tz=UTC)
     monday = dt - timedelta(days=dt.weekday())
@@ -88,7 +80,7 @@ def compute_weekly(
     for ip in ips:
         model = model_map.get(ip, "Unknown")
         rows = conn.execute(
-            """SELECT timestamp, labels_total, meters_total, meter_unit
+            """SELECT timestamp, labels_total, meters_total
                FROM snapshots WHERE printer_ip = ? AND timestamp >= ? AND timestamp <= ?
                ORDER BY timestamp""",
             (ip, from_ep, to_ep),
@@ -97,27 +89,24 @@ def compute_weekly(
             continue
 
         # Group by week
-        by_week: dict[str, dict[str, tuple[Any, Any, Any]]] = {}
+        by_week: dict[str, dict[str, tuple[Any, Any]]] = {}
         for row in rows:
-            ts, labels, meters, unit = row[0], row[1], row[2], row[3]
+            ts, labels, meters = row[0], row[1], row[2]
             wk = _week_label(ts)
             by_week.setdefault(
-                wk, {"first": (labels, meters, unit), "last": (labels, meters, unit)}
+                wk, {"first": (labels, meters), "last": (labels, meters)}
             )
-            by_week[wk]["last"] = (labels, meters, unit)
+            by_week[wk]["last"] = (labels, meters)
 
         for wk, data in by_week.items():
             first, last = data["first"], data["last"]
-            unit = first[2] or last[2] or "unknown"
 
             labels_d = (
                 (last[0] - first[0])
                 if first[0] is not None and last[0] is not None
                 else None
             )
-            m_s = _convert_to_meters(first[1], unit)
-            m_e = _convert_to_meters(last[1], unit)
-            meters_d = (m_e - m_s) if m_s is not None and m_e is not None else None
+            meters_d = (last[1] - first[1]) if first[1] is not None and last[1] is not None else None
 
             weeks.setdefault(wk, []).append(
                 {

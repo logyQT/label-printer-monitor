@@ -44,12 +44,12 @@ def _make_config() -> dict[str, Any]:
 
 
 def _seed_snapshots(
-    conn: Any, printer_ip: str, timestamps_labels_meters_unit: list[tuple[Any, Any, Any, str]]
+    conn: Any, printer_ip: str, timestamps_labels_meters: list[tuple[Any, Any, Any]]
 ) -> None:
-    """Insert snapshot rows from a list of (epoch, labels, meters, unit)."""
-    for ts, labels, meters, unit in timestamps_labels_meters_unit:
+    """Insert snapshot rows from a list of (epoch, labels, meters)."""
+    for ts, labels, meters in timestamps_labels_meters:
         db.save_snapshot(
-            conn, printer_ip, labels, meters, unit, model_name="TestModel", timestamp=ts
+            conn, printer_ip, labels, meters, model_name="TestModel", timestamp=ts
         )
 
 
@@ -79,43 +79,6 @@ class TestToEpoch(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests for _convert_to_meters
-# ---------------------------------------------------------------------------
-
-
-class TestConvertToMeters(unittest.TestCase):
-    """Tests for _convert_to_meters()."""
-
-    def test_cm_to_m(self) -> None:
-        result = report._convert_to_meters(100, "cm")
-        assert result is not None
-        self.assertAlmostEqual(result, 1.0)
-
-    def test_m_passthrough(self) -> None:
-        result = report._convert_to_meters(5.5, "m")
-        assert result is not None
-        self.assertAlmostEqual(result, 5.5)
-
-    def test_in_to_m(self) -> None:
-        result = report._convert_to_meters(1, "in")
-        assert result is not None
-        self.assertAlmostEqual(result, 0.0254)
-
-    def test_mm_to_m(self) -> None:
-        result = report._convert_to_meters(1000, "mm")
-        assert result is not None
-        self.assertAlmostEqual(result, 1.0)
-
-    def test_none_returns_none(self) -> None:
-        self.assertIsNone(report._convert_to_meters(None, "cm"))
-
-    def test_unknown_unit_passthrough(self) -> None:
-        result = report._convert_to_meters(42, "ft")
-        assert result is not None
-        self.assertAlmostEqual(result, 42)
-
-
-# ---------------------------------------------------------------------------
 # Tests for compute_weekly
 # ---------------------------------------------------------------------------
 
@@ -128,11 +91,11 @@ class TestComputeWeekly(unittest.TestCase):
         config = _make_config()
         conn = db.init_db(":memory:")
 
-        # 2026-09-17: Morning shift = 06:00–14:00 UTC
+        # 2026-09-17: data already in meters (collection-time conversion)
         ts_start = _epoch_for_date("2026-09-17", 7, 0)
         ts_end = _epoch_for_date("2026-09-17", 12, 0)
-        db.save_snapshot(conn, "10.0.0.1", 100, 50.0, "cm", "Zebra ZT230", timestamp=ts_start)
-        db.save_snapshot(conn, "10.0.0.1", 120, 60.0, "cm", "Zebra ZT230", timestamp=ts_end)
+        db.save_snapshot(conn, "10.0.0.1", 100, 50.0, "m", "Zebra ZT230", timestamp=ts_start)
+        db.save_snapshot(conn, "10.0.0.1", 120, 60.0, "m", "Zebra ZT230", timestamp=ts_end)
 
         # Patch to return our still-open connection
         with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
@@ -147,7 +110,7 @@ class TestComputeWeekly(unittest.TestCase):
         r = zebras[0]
         self.assertEqual(r["labels"], 20)
         assert r["meters"] is not None
-        self.assertAlmostEqual(r["meters"], 0.1)  # 10 cm = 0.1 m
+        self.assertAlmostEqual(r["meters"], 10.0)  # 60.0 m - 50.0 m = 10.0 m
 
     def test_no_snapshots_returns_empty(self) -> None:
         """No snapshots in DB → empty results."""
@@ -211,7 +174,7 @@ class TestComputeWeekly(unittest.TestCase):
             "10.0.0.1",
             100,
             50.0,
-            "cm",
+            "m",
             "Zebra ZT230",
             timestamp=_epoch_for_date("2026-09-17", 9, 0),
         )

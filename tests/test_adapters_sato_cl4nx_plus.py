@@ -70,7 +70,7 @@ class TestSatoCL4NXPlusAdapter(unittest.TestCase):
         self.assertTrue(result["reachable"])
         self.assertEqual(result["model_name"], "SATO CL4NX Plus")
         self.assertEqual(result["meters_total"], 123456.0)
-        self.assertEqual(result["meter_unit"], "linearMeters")
+        self.assertEqual(result["meter_unit"], "m")  # always standardized to meters
         # Sato has no label counter
         self.assertIsNone(result["labels_total"])
 
@@ -88,7 +88,7 @@ class TestSatoCL4NXPlusAdapter(unittest.TestCase):
 
         self.assertTrue(result["reachable"])
         self.assertEqual(result["meters_total"], 50000.0)
-        self.assertEqual(result["meter_unit"], "unknown")
+        self.assertEqual(result["meter_unit"], "m")
 
     @patch.object(SatoCL4NXPlusAdapter, "_snmp_get")
     def test_unreachable_printer(self, mock_get: MagicMock) -> None:
@@ -149,7 +149,7 @@ class TestSatoCL4NXPlusAdapter(unittest.TestCase):
         result = adapter.get_counters()
 
         self.assertTrue(result["reachable"])
-        self.assertEqual(result["meter_unit"], "unit_code:7")
+        self.assertEqual(result["meter_unit"], "m")
 
 
 if __name__ == "__main__":

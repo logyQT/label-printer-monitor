@@ -75,7 +75,7 @@ class TestGenericGetCounters(unittest.TestCase):
         self.assertFalse(result["reachable"])
         self.assertIsNone(result["labels_total"])
         self.assertIsNone(result["meters_total"])
-        self.assertEqual(result["meter_unit"], "unknown")
+        self.assertEqual(result["meter_unit"], "m")
         self.assertEqual(result["model_name"], "")
 
     @patch.object(DemoAdapter, "_snmp_get_retry")
@@ -85,28 +85,28 @@ class TestGenericGetCounters(unittest.TestCase):
         mock_get.return_value = (b"Demo Printer", TAG_OCTET_STRING)
         mock_retry.side_effect = [
             (10, TAG_COUNTER32),  # labels
-            (250.5, TAG_COUNTER32),  # meters
+            (250.5, TAG_COUNTER32),  # meters in cm
         ]
         result = DemoAdapter("10.0.0.1").get_counters()
 
         self.assertTrue(result["reachable"])
         self.assertEqual(result["model_name"], "Demo Printer")
         self.assertEqual(result["labels_total"], 10)
-        self.assertEqual(result["meters_total"], 250.5)
-        self.assertEqual(result["meter_unit"], "cm")
+        self.assertAlmostEqual(result["meters_total"], 2.505)  # 250.5 cm → 2.505 m
+        self.assertEqual(result["meter_unit"], "m")
 
     @patch.object(DemoAdapter, "_snmp_get_retry")
     @patch.object(DemoAdapter, "_snmp_get")
     def test_partial_metrics(self, mock_get: MagicMock, mock_retry: MagicMock) -> None:
-        """Some metrics fail; unit stays unknown without a meter reading."""
+        """Some metrics fail; meter_unit stays 'm' even without a meter reading."""
         mock_get.return_value = (b"Demo", TAG_OCTET_STRING)
         mock_retry.side_effect = [(None, None), (100.0, TAG_COUNTER32)]
         result = DemoAdapter("10.0.0.1").get_counters()
 
         self.assertTrue(result["reachable"])
         self.assertIsNone(result["labels_total"])
-        self.assertEqual(result["meters_total"], 100.0)
-        self.assertEqual(result["meter_unit"], "cm")
+        self.assertAlmostEqual(result["meters_total"], 1.0)  # 100.0 cm → 1.0 m
+        self.assertEqual(result["meter_unit"], "m")
 
     @patch.object(OneShotAdapter, "_snmp_get_retry")
     @patch.object(OneShotAdapter, "_snmp_get")
@@ -237,11 +237,11 @@ class TestAdapterContract(unittest.TestCase):
                     result = adapter.get_counters()
                 self.assertEqual(set(result), set(METRIC_KEYS))
                 self.assertFalse(result["reachable"])
-                self.assertEqual(result["meter_unit"], "unknown")
+                self.assertEqual(result["meter_unit"], "m")
                 self.assertEqual(result["model_name"], "")
 
     def test_reachable_no_metrics_result_contract(self) -> None:
-        """Reachable but all metric reads fail -> keys present, unit unknown."""
+        """Reachable but all metric reads fail -> keys present, unit 'm'."""
         for cls in ADAPTER_CLASSES:
             with self.subTest(adapter=cls.__name__):
                 adapter = cls("10.0.0.1", retries=0)
@@ -255,7 +255,7 @@ class TestAdapterContract(unittest.TestCase):
                 self.assertIn("ZZZ", result["model_name"])
                 self.assertIsNone(result["labels_total"])
                 self.assertIsNone(result["meters_total"])
-                self.assertEqual(result["meter_unit"], "unknown")
+                self.assertEqual(result["meter_unit"], "m")
 
 
 if __name__ == "__main__":

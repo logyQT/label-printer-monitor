@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     timestamp     INTEGER NOT NULL,
     labels_total  INTEGER,
     meters_total  REAL,
-    meter_unit    TEXT,
+    meter_unit    TEXT DEFAULT 'm',
     model_name    TEXT,
     PRIMARY KEY (printer_ip, timestamp)
 );
@@ -80,18 +80,21 @@ def save_snapshot(
     printer_ip: str,
     labels_total: int | float | None,
     meters_total: int | float | None,
-    meter_unit: str,
-    model_name: str,
+    meter_unit: str = "m",
+    model_name: str = "",
     timestamp: int | str | datetime | None = None,
 ) -> bool:
     """Save a printer counter snapshot. Idempotent via INSERT OR IGNORE.
+
+    ``meter_unit`` defaults to ``"m"``. All values should be in meters;
+    callers should pass ``meter_unit="m"`` or omit it entirely.
 
     Args:
         conn: SQLite connection.
         printer_ip: Printer IP address.
         labels_total: Total labels printed.
-        meters_total: Total meters/length printed.
-        meter_unit: Unit for meters (e.g. 'cm', 'mm').
+        meters_total: Total meters printed (always in meters).
+        meter_unit: Unit for meters (kept for schema compat; always ``"m"``).
         model_name: Printer model string.
         timestamp: Unix epoch (int), 'YYYY-MM-DD'/'ISO 8601' string, or datetime.
             If None, uses current time rounded to 5min.

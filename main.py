@@ -310,15 +310,14 @@ def run_collection(config: Config) -> tuple[int, int, int]:
                 printer_ip=ip,
                 labels_total=counters.get("labels_total"),
                 meters_total=counters.get("meters_total"),
-                meter_unit=counters.get("meter_unit", "unknown"),
+                meter_unit="m",
                 model_name=counters.get("model_name", ""),
             )
             success += 1
             labels = counters.get("labels_total")
             meters = counters.get("meters_total")
-            unit = counters.get("meter_unit", "")
             labels_str = f"{labels:,}" if labels is not None else "n/a"
-            meters_str = f"{meters:,.1f} {unit}" if meters is not None else "n/a"
+            meters_str = f"{meters:,.1f} m" if meters is not None else "n/a"
             log.info(f"{model} ({ip}) [{location}] - labels: {labels_str}, odometer: {meters_str}")
 
     db.close_db(conn)
