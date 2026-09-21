@@ -51,11 +51,13 @@ pip install nuitka
 python build.py            # produces dist/lpm.exe
 ```
 
-Add to PATH (Windows PowerShell):
+Move `dist/lpm.exe` somewhere permanent, then add that directory to PATH.
+
+**Windows PowerShell:**
 
 ```powershell
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$currentPath;C:\path\to\label-printer-monitor\dist", "User")
+[Environment]::SetEnvironmentVariable("Path", "$currentPath;C:\Tools\lpm", "User")
 ```
 
 Usage is identical, replace `python main.py` with `lpm`:
