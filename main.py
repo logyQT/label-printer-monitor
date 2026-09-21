@@ -102,7 +102,26 @@ def load_config(path: str | None = None) -> Config:
         sys.exit(2)
 
 
-def backup_data(config_path: str | None = None) -> str:
+def _prune_backups(keep: int) -> None:
+    """Remove oldest backup directories when count exceeds *keep*.
+
+    Backup directory names are timestamped (YYYYMMDD_HHMMSS) so
+    a lexicographic sort gives chronological order.
+    """
+    root = backups_dir()
+    entries = sorted(
+        (e for e in os.scandir(root) if e.is_dir()),
+        key=lambda e: e.name,
+    )
+    excess = len(entries) - keep
+    if excess <= 0:
+        return
+    for entry in entries[:excess]:
+        shutil.rmtree(entry.path)
+        log.debug("Pruned old backup: %s", entry.name)
+
+
+def backup_data(config_path: str | None = None, config: Config | None = None) -> str:
     """Snapshot config + db into data/backups/<timestamp>/ before a run."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = os.path.join(backups_dir(), ts)
@@ -117,6 +136,18 @@ def backup_data(config_path: str | None = None) -> str:
     schema = _schema_path()
     if os.path.exists(schema):
         shutil.copy2(schema, os.path.join(dest, "config.json.schema"))
+
+    # Backup database
+    cfg = config or {}
+    db_file = cfg.get("db", {}).get("filename", "")
+    if db_file and db_file != ":memory:":
+        db_path = os.path.join(data_dir(), db_file)
+        if os.path.exists(db_path):
+            shutil.copy2(db_path, os.path.join(dest, db_file))
+
+    # Prune old backups (default keep=50 if not configured)
+    keep = cfg.get("backups", {}).get("keep", 50)
+    _prune_backups(keep)
 
     return dest
 
@@ -329,7 +360,7 @@ def run_collection(config: Config, dry: bool = False) -> tuple[int, int, int]:
 def _handle_collect(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     if not args.dry:
-        backup_data(args.config)
+        backup_data(args.config, config)
     log_dir = os.path.join(_project_root(), config.get("log_dir", "logs"))
     log_file = setup_logging(log_dir, verbose=args.verbose)
     log.info(f"Log file: {log_file}")
@@ -373,7 +404,7 @@ def _handle_report(args: argparse.Namespace) -> None:
     from src.report import compute_weekly, export_csv, print_report
 
     config = load_config(args.config)
-    backup_data(args.config)
+    backup_data(args.config, config)
     from_date = args.from_date or datetime.now().strftime("%Y-%m-%d")
     to_date = args.to_date or datetime.now().strftime("%Y-%m-%d")
 

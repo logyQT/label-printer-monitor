@@ -79,6 +79,9 @@ EMBEDDED_CONFIG_EXAMPLE: str = """\
   "collection": {
     "max_concurrency": 20
   },
+  "backups": {
+    "keep": 50
+  },
   "printers": [
     { "ip": "10.0.1.10", "model": "Sato CL4NX Plus", "location": "Linia 1" },
     { "ip": "10.0.1.11", "model": "Zebra ZT411", "location": "Linia 2" },
@@ -149,6 +152,18 @@ EMBEDDED_SCHEMA: str = """\
           "description": "Maximum number of printers collected in parallel",
           "minimum": 1,
           "default": 20
+        }
+      }
+    },
+    "backups": {
+      "type": "object",
+      "description": "Backup retention settings",
+      "properties": {
+        "keep": {
+          "type": "integer",
+          "description": "Maximum number of backup snapshots to retain. Older backups are deleted automatically.",
+          "minimum": 1,
+          "default": 50
         }
       }
     },

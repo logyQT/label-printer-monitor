@@ -62,6 +62,18 @@
         }
       }
     },
+    "backups": {
+      "type": "object",
+      "description": "Backup retention settings",
+      "properties": {
+        "keep": {
+          "type": "integer",
+          "description": "Maximum number of backup snapshots to retain. Older backups are deleted automatically.",
+          "minimum": 1,
+          "default": 50
+        }
+      }
+    },
     "printers": {
       "type": "array",
       "description": "List of printers to monitor",
