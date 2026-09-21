@@ -22,24 +22,26 @@ from pysnmp.hlapi.v1arch.asyncio import (
     get_cmd as _async_get_cmd,
 )
 
-# --- BER tag constants (kept for backward compat with tests/adapters) ---
+# --- BER tag constants derived from pysnmp ---
 
-TAG_INTEGER: int = 0x02
-TAG_OCTET_STRING: int = 0x04
-TAG_NULL: int = 0x05
-TAG_OID: int = 0x06
-TAG_SEQUENCE: int = 0x30
-TAG_COUNTER32: int = 0x41
-TAG_GAUGE32: int = 0x42
-TAG_TIMETICKS: int = 0x43
-TAG_IP_ADDRESS: int = 0x40
+from pysnmp.proto import rfc1902
 
-TAG_GET_REQUEST: int = 0xA0
-TAG_GETNEXT_REQUEST: int = 0xA1
-TAG_GET_RESPONSE: int = 0xA2
-TAG_GET_BULK_REQUEST: int = 0xA5
 
-VERSION_1: int = 0
+def _ber_tag(pysnmp_type: Any) -> int:
+    """Extract BER tag integer from a pysnmp type class."""
+    t = pysnmp_type.tagSet[0]
+    return int(t.tagClass | t.tagId)
+
+
+TAG_INTEGER: int = _ber_tag(rfc1902.Integer)
+TAG_OCTET_STRING: int = _ber_tag(rfc1902.OctetString)
+TAG_NULL: int = _ber_tag(rfc1902.Null)
+TAG_OID: int = _ber_tag(rfc1902.ObjectIdentifier)
+TAG_COUNTER32: int = _ber_tag(rfc1902.Counter32)
+TAG_GAUGE32: int = _ber_tag(rfc1902.Gauge32)
+TAG_TIMETICKS: int = _ber_tag(rfc1902.TimeTicks)
+TAG_IP_ADDRESS: int = _ber_tag(rfc1902.IpAddress)
+
 VERSION_2C: int = 1
 
 
