@@ -348,6 +348,10 @@ def _handle_validate(args: argparse.Namespace) -> None:
         with contextlib.suppress(SystemExit):
             issues += validate_network(load_config(args.config))
 
+    # Without --verbose, only show warnings and errors.
+    if not args.verbose:
+        issues = [i for i in issues if i.level != "OK"]
+
     for level, message in issues:
         print(f"[{level}] {message}")
 
@@ -400,7 +404,7 @@ def main() -> None:
 
     # Collect-specific flags
     parser.add_argument(
-        "--verbose", "-v", action="store_true", help="(collect) Show detailed SNMP debug output"
+        "--verbose", "-v", action="store_true", help="Verbose output (--collect: SNMP debug, --validate: include OKs)"
     )
 
     # Config selection (all modes)
