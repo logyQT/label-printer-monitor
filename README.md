@@ -73,14 +73,14 @@ lpm --validate --network
 ### Linux (cron)
 
 ```
-0 5 * * 1-5  cd /path/to/label-printer-monitor && python main.py --collect
-0 15 * * 1-5 cd /path/to/label-printer-monitor && python main.py --collect
+0 5 * * 1-5  lpm --collect
+0 15 * * 1-5 lpm --collect
 ```
 
 ### Windows (Task Scheduler)
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "python" -Argument "main.py --collect" -WorkingDirectory "C:\path\to\label-printer-monitor"
+$action = New-ScheduledTaskAction -Execute "lpm" -Argument "--collect"
 $trigger1 = New-ScheduledTaskTrigger -Daily -At "05:00"
 $trigger2 = New-ScheduledTaskTrigger -Daily -At "15:00"
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
