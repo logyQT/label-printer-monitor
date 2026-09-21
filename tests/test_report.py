@@ -36,10 +36,6 @@ def _make_config() -> dict[str, Any]:
             {"ip": "10.0.0.1", "model": "Zebra ZT230", "location": "Line 1"},
             {"ip": "10.0.0.2", "model": "Sato CL4NX Plus", "location": "Line 2"},
         ],
-        "shifts": [
-            {"name": "Morning", "start": "06:00", "end": "14:00"},
-            {"name": "Afternoon", "start": "14:00", "end": "22:00"},
-        ],
     }
 
 

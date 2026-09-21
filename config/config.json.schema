@@ -62,30 +62,6 @@
         }
       }
     },
-    "shifts": {
-      "type": "array",
-      "description": "Work shift definitions",
-      "items": {
-        "type": "object",
-        "required": ["name", "start", "end"],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Shift name (e.g. Morning, Afternoon, Night)"
-          },
-          "start": {
-            "type": "string",
-            "description": "Shift start time (HH:MM, 24h format)",
-            "pattern": "^([01]?[0-9]|2[0-3]):[0-5][0-9]$"
-          },
-          "end": {
-            "type": "string",
-            "description": "Shift end time (HH:MM, 24h format)",
-            "pattern": "^([01]?[0-9]|2[0-3]):[0-5][0-9]$"
-          }
-        }
-      }
-    },
     "printers": {
       "type": "array",
       "description": "List of printers to monitor",

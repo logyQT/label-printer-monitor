@@ -1,6 +1,6 @@
 """SQLite storage layer for printer statistics.
 
-Handles snapshots, shift deltas, and idempotent inserts.
+Handles snapshots and idempotent inserts.
 Zero external dependencies - uses Python's built-in sqlite3.
 """
 
@@ -35,21 +35,6 @@ class Snapshot(TypedDict):
     meters_total: float | None
     meter_unit: str
     model_name: str
-
-
-class ShiftDelta(TypedDict):
-    """Counter deltas between the snapshots bracketing a shift."""
-
-    labels_delta: int
-    meters_delta: float
-    start_snapshot: Snapshot
-    end_snapshot: Snapshot
-
-
-class PrinterShiftDelta(ShiftDelta):
-    """Shift delta for one printer, keyed by printer IP."""
-
-    printer_ip: str
 
 
 def init_db(db_path: str) -> sqlite3.Connection:
@@ -175,43 +160,6 @@ def get_snapshot_at(
     return _row_to_dict(row)
 
 
-def get_shift_delta(
-    conn: sqlite3.Connection, printer_ip: str, shift_start: int | str, shift_end: int | str
-) -> ShiftDelta | None:
-    """Calculate labels and meters printed during a shift.
-
-    Args:
-        conn: SQLite connection.
-        printer_ip: Printer IP.
-        shift_start: Start timestamp (Unix epoch int or ISO 8601 string).
-        shift_end: End timestamp (Unix epoch int or ISO 8601 string).
-
-    Returns:
-        Dict with delta values or None if data missing:
-            labels_delta (int): Labels printed in shift.
-            meters_delta (float): Meters printed in shift.
-            start_snapshot (dict): Snapshot at shift start.
-            end_snapshot (dict): Snapshot at shift end.
-    """
-    start_snap = get_snapshot_at(conn, printer_ip, shift_start)
-    end_snap = get_snapshot_at(conn, printer_ip, shift_end)
-
-    if start_snap is None or end_snap is None:
-        return None
-
-    labels_start = start_snap["labels_total"] or 0
-    labels_end = end_snap["labels_total"] or 0
-    meters_start = start_snap["meters_total"] or 0
-    meters_end = end_snap["meters_total"] or 0
-
-    return {
-        "labels_delta": labels_end - labels_start,
-        "meters_delta": meters_end - meters_start,
-        "start_snapshot": start_snap,
-        "end_snapshot": end_snap,
-    }
-
-
 def get_all_printers_latest(conn: sqlite3.Connection) -> list[Snapshot]:
     """Get latest snapshot for all printers.
 
@@ -233,30 +181,6 @@ def get_all_printers_latest(conn: sqlite3.Connection) -> list[Snapshot]:
                     AND s.timestamp = latest.max_ts"""
     )
     return [_row_to_dict(row) for row in cursor.fetchall()]
-
-
-def get_printers_by_shift(
-    conn: sqlite3.Connection, shift_start: int | str, shift_end: int | str
-) -> list[PrinterShiftDelta]:
-    """Get shift deltas for all printers.
-
-    Args:
-        conn: SQLite connection.
-        shift_start: Shift start timestamp (ISO 8601).
-        shift_end: Shift end timestamp (ISO 8601).
-
-    Returns:
-        List of dicts with shift delta data.
-    """
-    cursor = conn.execute("""SELECT DISTINCT printer_ip FROM snapshots""")
-    printer_ips = [row[0] for row in cursor.fetchall()]
-
-    results: list[PrinterShiftDelta] = []
-    for ip in printer_ips:
-        delta = get_shift_delta(conn, ip, shift_start, shift_end)
-        if delta is not None:
-            results.append({"printer_ip": ip, **delta})
-    return results
 
 
 def get_history(

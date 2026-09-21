@@ -115,140 +115,6 @@ class TestCounterEdgeCases(unittest.TestCase):
         self.assertIsNone(meters)
 
 
-class TestDeltaCalculation(unittest.TestCase):
-    """Tests for shift delta edge cases."""
-
-    def setUp(self) -> None:
-        self.conn = db.init_db(":memory:")
-
-    def tearDown(self) -> None:
-        db.close_db(self.conn)
-
-    def test_normal_delta(self) -> None:
-        """Normal shift: printer printed some labels."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1150, 57.5, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
-        )
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
-        )
-        assert delta is not None
-        self.assertEqual(delta["labels_delta"], 150)
-        self.assertAlmostEqual(delta["meters_delta"], 7.5, places=2)
-
-    def test_zero_delta_idle_printer(self) -> None:
-        """Printer was idle during the shift."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 5000, 250.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 5000, 250.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
-        )
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
-        )
-        assert delta is not None
-        self.assertEqual(delta["labels_delta"], 0)
-        self.assertEqual(delta["meters_delta"], 0.0)
-
-    def test_negative_delta_counter_reset(self) -> None:
-        """Negative delta indicates counter reset."""
-        db.save_snapshot(
-            self.conn,
-            "10.0.0.1",
-            50000,
-            2500.0,
-            "cm",
-            "Zebra ZT230",
-            timestamp="2026-09-17T06:00:00",
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 5.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
-        )
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
-        )
-        assert delta is not None
-        self.assertEqual(delta["labels_delta"], -49900)
-        self.assertAlmostEqual(delta["meters_delta"], -2495.0, places=2)
-
-    def test_missing_start_snapshot(self) -> None:
-        """No snapshot at shift start."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
-        )
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
-        )
-        self.assertIsNone(delta)
-
-    def test_missing_end_snapshot(self) -> None:
-        """No snapshot at shift end - get_snapshot_at returns closest-before."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
-        )
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
-        )
-        # get_snapshot_at returns closest-before, so it finds 06:00 for both
-        self.assertIsNotNone(delta)
-        assert delta is not None
-        self.assertEqual(delta["labels_delta"], 0)
-        self.assertEqual(delta["meters_delta"], 0.0)
-
-    def test_both_snapshots_missing(self) -> None:
-        """No data at all for this printer."""
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
-        )
-        self.assertIsNone(delta)
-
-    def test_delta_with_none_labels(self) -> None:
-        """Start snapshot has None labels (printer unreachable at start)."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", None, None, "unknown", "", timestamp="2026-09-17T06:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
-        )
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00"
-        )
-        # None treated as 0
-        assert delta is not None
-        self.assertEqual(delta["labels_delta"], 1000)
-        self.assertEqual(delta["meters_delta"], 50.0)
-
-    def test_same_timestamp_start_end(self) -> None:
-        """Start and end timestamps are the same."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
-        )
-        delta = db.get_shift_delta(
-            self.conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T06:00:00"
-        )
-        self.assertIsNotNone(delta)
-        assert delta is not None
-        self.assertEqual(delta["labels_delta"], 0)
-        self.assertEqual(delta["meters_delta"], 0.0)
-
-    def test_closest_snapshot_used(self) -> None:
-        """get_snapshot_at should use closest snapshot before target."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 5.0, "m", "Zebra ZT230", timestamp="2026-09-17T05:55:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 10.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:05:00"
-        )
-        # Query for 06:00 - should get 05:55 snapshot (closest before)
-        snap = db.get_snapshot_at(self.conn, "10.0.0.1", "2026-09-17T06:00:00")
-        assert snap is not None
-        self.assertEqual(snap["labels_total"], 100)
-
-
 class TestMeterUnitInterpretation(unittest.TestCase):
     """Tests for unit interpretation (conversion now at collection time in converters.py)."""
 
@@ -434,26 +300,6 @@ class TestDataPipeline(unittest.TestCase):
         self.assertEqual(len(history), 1)
         db.close_db(conn)
 
-    def test_delta_from_pipeline_data(self) -> None:
-        """Deltas should be correct after pipeline storage."""
-        conn = db.init_db(":memory:")
-
-        # Shift start
-        db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T06:00:00"
-        )
-        # Shift end
-        db.save_snapshot(
-            conn, "10.0.0.1", 1150, 57.5, "m", "Zebra", timestamp="2026-09-17T14:00:00"
-        )
-
-        delta = db.get_shift_delta(conn, "10.0.0.1", "2026-09-17T06:00:00", "2026-09-17T14:00:00")
-        assert delta is not None
-        self.assertEqual(delta["labels_delta"], 150)
-        self.assertAlmostEqual(delta["meters_delta"], 7.5, places=2)
-        db.close_db(conn)
-
-
 class TestTimestampHandling(unittest.TestCase):
     """Tests for timestamp parsing and rounding."""
 
@@ -580,28 +426,6 @@ class TestMultiPrinterAggregation(unittest.TestCase):
         unreachable = [s for s in latest if s["labels_total"] is None]
         self.assertEqual(len(reachable), 1)
         self.assertEqual(len(unreachable), 1)
-
-    def test_shift_delta_all_printers(self) -> None:
-        """Shift deltas for all printers."""
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T06:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 1100, 55.0, "m", "Zebra", timestamp="2026-09-17T14:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.2", 2000, 100.0, "m", "Zebra", timestamp="2026-09-17T06:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.2", 2200, 110.0, "m", "Zebra", timestamp="2026-09-17T14:00:00"
-        )
-
-        results = db.get_printers_by_shift(self.conn, "2026-09-17T06:00:00", "2026-09-17T14:00:00")
-        self.assertEqual(len(results), 2)
-        total_labels_delta = sum(r["labels_delta"] for r in results)
-        total_meters_delta = sum(r["meters_delta"] for r in results)
-        self.assertEqual(total_labels_delta, 300)
-        self.assertEqual(total_meters_delta, 15.0)
 
 
 class TestDataTypeCoercion(unittest.TestCase):
