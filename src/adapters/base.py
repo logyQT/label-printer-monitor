@@ -188,7 +188,7 @@ class PrinterAdapter(ABC):
 
         model, _ = self._snmp_get(self.reachability_oid, label="poke")
         if model is None:
-            return cast(CounterResult, result)
+            return cast("CounterResult", result)
         result["reachable"] = True
         result["model_name"] = _to_str(model) or ""
 
@@ -204,7 +204,7 @@ class PrinterAdapter(ABC):
                 result["meter_unit"] = spec.unit
 
         self._collect_extra(result)
-        return cast(CounterResult, result)
+        return cast("CounterResult", result)
 
     def is_reachable(self) -> bool:
         """Check if the printer is reachable via SNMP."""

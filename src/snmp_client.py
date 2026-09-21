@@ -23,7 +23,6 @@ from pysnmp.hlapi.v1arch.asyncio import (
 )
 
 # --- BER tag constants derived from pysnmp ---
-
 from pysnmp.proto import rfc1902
 
 

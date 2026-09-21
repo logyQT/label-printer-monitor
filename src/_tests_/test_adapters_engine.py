@@ -145,7 +145,7 @@ class TestConverters(unittest.TestCase):
 
     def test_unknown_converter_raises(self) -> None:
         with self.assertRaises(ValueError):
-            convert_value(1, cast(ConverterSpec, "bogus"))
+            convert_value(1, cast("ConverterSpec", "bogus"))
 
     def test_unknown_tuple_kind_raises(self) -> None:
         with self.assertRaises(ValueError):
