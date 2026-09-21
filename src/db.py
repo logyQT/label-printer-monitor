@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS snapshots (
     timestamp     INTEGER NOT NULL,
     labels_total  INTEGER,
     meters_total  REAL,
-    meter_unit    TEXT DEFAULT 'm',
     model_name    TEXT,
     PRIMARY KEY (printer_ip, timestamp)
 );
@@ -33,7 +32,6 @@ class Snapshot(TypedDict):
     timestamp: int
     labels_total: int | None
     meters_total: float | None
-    meter_unit: str
     model_name: str
 
 
@@ -65,21 +63,18 @@ def save_snapshot(
     printer_ip: str,
     labels_total: int | float | None,
     meters_total: int | float | None,
-    meter_unit: str = "m",
     model_name: str = "",
     timestamp: int | str | datetime | None = None,
 ) -> bool:
     """Save a printer counter snapshot. Idempotent via INSERT OR IGNORE.
 
-    ``meter_unit`` defaults to ``"m"``. All values should be in meters;
-    callers should pass ``meter_unit="m"`` or omit it entirely.
+    All values in meters_total are in meters.
 
     Args:
         conn: SQLite connection.
         printer_ip: Printer IP address.
         labels_total: Total labels printed.
-        meters_total: Total meters printed (always in meters).
-        meter_unit: Unit for meters (kept for schema compat; always ``"m"``).
+        meters_total: Total meters printed.
         model_name: Printer model string.
         timestamp: Unix epoch (int), 'YYYY-MM-DD'/'ISO 8601' string, or datetime.
             If None, uses current time rounded to 5min.
@@ -95,10 +90,9 @@ def save_snapshot(
     try:
         cursor = conn.execute(
             """INSERT OR IGNORE INTO snapshots
-               (printer_ip, timestamp, labels_total, meters_total, meter_unit,
-                model_name)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (printer_ip, timestamp, labels_total, meters_total, meter_unit, model_name),
+               (printer_ip, timestamp, labels_total, meters_total, model_name)
+               VALUES (?, ?, ?, ?, ?)""",
+            (printer_ip, timestamp, labels_total, meters_total, model_name),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -119,7 +113,7 @@ def get_latest_snapshot(conn: sqlite3.Connection, printer_ip: str) -> Snapshot |
     """
     cursor = conn.execute(
         """SELECT printer_ip, timestamp, labels_total, meters_total,
-                  meter_unit, model_name
+                  model_name
            FROM snapshots
            WHERE printer_ip = ?
            ORDER BY timestamp DESC
@@ -147,7 +141,7 @@ def get_snapshot_at(
     """
     cursor = conn.execute(
         """SELECT printer_ip, timestamp, labels_total, meters_total,
-                  meter_unit, model_name
+                  model_name
            FROM snapshots
            WHERE printer_ip = ? AND timestamp <= ?
            ORDER BY timestamp DESC
@@ -171,7 +165,7 @@ def get_all_printers_latest(conn: sqlite3.Connection) -> list[Snapshot]:
     """
     cursor = conn.execute(
         """SELECT s.printer_ip, s.timestamp, s.labels_total, s.meters_total,
-                  s.meter_unit, s.model_name
+                  s.model_name
            FROM snapshots s
            INNER JOIN (
                SELECT printer_ip, MAX(timestamp) as max_ts
@@ -254,6 +248,5 @@ def _row_to_dict(row: Sequence[Any]) -> Snapshot:
         "timestamp": row[1],
         "labels_total": row[2],
         "meters_total": row[3],
-        "meter_unit": row[4],
-        "model_name": row[5],
+        "model_name": row[4],
     }

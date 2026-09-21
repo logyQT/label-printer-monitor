@@ -137,22 +137,6 @@ class TestMeterUnitInterpretation(unittest.TestCase):
         # These measure different things
         self.assertNotEqual(sheets_count, linear_meters)
 
-    def test_unit_consistency_across_snapshots(self) -> None:
-        """All snapshots are stored with meter_unit='m' after collection-time conversion."""
-        conn = db.init_db(":memory:")
-        db.save_snapshot(
-            conn, "10.0.0.1", 100, 5.0, "m", "Zebra ZT230", timestamp="2026-09-17T06:00:00"
-        )
-        db.save_snapshot(
-            conn, "10.0.0.1", 200, 10.0, "m", "Zebra ZT230", timestamp="2026-09-17T14:00:00"
-        )
-        history = db.get_history(conn, "10.0.0.1")
-        units = [s["meter_unit"] for s in history]
-        # All units should be "m" (standardized at collection time)
-        self.assertEqual(len(set(units)), 1)
-        self.assertEqual(units[0], "m")
-        db.close_db(conn)
-
 
 class TestRealisticPrinterResponses(unittest.TestCase):
     """Tests simulating actual Zebra printer SNMP responses."""
@@ -254,7 +238,6 @@ class TestDataPipeline(unittest.TestCase):
             "192.168.40.249",
             counters["labels_total"],
             counters["meters_total"],
-            counters["meter_unit"],
             counters["model_name"],
             timestamp="2026-09-17T10:00:00",
         )
@@ -264,7 +247,6 @@ class TestDataPipeline(unittest.TestCase):
         assert snap is not None
         self.assertEqual(snap["labels_total"], 15234)
         self.assertEqual(snap["meters_total"], 7617.0)
-        self.assertEqual(snap["meter_unit"], "m")
         self.assertEqual(snap["model_name"], "ZTC ZT230-200dpi ZPL")
         db.close_db(conn)
 
@@ -277,7 +259,7 @@ class TestDataPipeline(unittest.TestCase):
         meters = 50.5
 
         db.save_snapshot(
-            conn, "10.0.0.1", labels, meters, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", labels, meters, "Zebra", timestamp="2026-09-17T10:00:00"
         )
 
         snap = db.get_latest_snapshot(conn, "10.0.0.1")
@@ -293,8 +275,8 @@ class TestDataPipeline(unittest.TestCase):
         conn = db.init_db(":memory:")
 
         ts = "2026-09-17T10:00:00"
-        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp=ts)
-        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp=ts)
+        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "Zebra", timestamp=ts)
+        db.save_snapshot(conn, "10.0.0.1", 1000, 50.0, "Zebra", timestamp=ts)
 
         history = db.get_history(conn, "10.0.0.1")
         self.assertEqual(len(history), 1)
@@ -380,13 +362,13 @@ class TestMultiPrinterAggregation(unittest.TestCase):
     def test_sum_across_printers(self) -> None:
         """Sum labels from all printers."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", 2000, 100.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.2", 2000, 100.0, "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.3", 500, 25.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.3", 500, 25.0, "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
 
         latest = db.get_all_printers_latest(self.conn)
@@ -398,13 +380,13 @@ class TestMultiPrinterAggregation(unittest.TestCase):
     def test_average_per_printer(self) -> None:
         """Average meters per printer."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 100.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 1000, 100.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", 2000, 200.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.2", 2000, 200.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.3", 1500, 150.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.3", 1500, 150.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
 
         latest = db.get_all_printers_latest(self.conn)
@@ -415,10 +397,10 @@ class TestMultiPrinterAggregation(unittest.TestCase):
     def test_exclude_unreachable_printers(self) -> None:
         """Unreachable printers should be excluded from totals."""
         db.save_snapshot(
-            self.conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 1000, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", None, None, "unknown", "", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.2", None, None, "", timestamp="2026-09-17T10:00:00"
         )
 
         latest = db.get_all_printers_latest(self.conn)
@@ -435,7 +417,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """labels_total should be stored as INTEGER in SQLite."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         cursor = conn.execute(
             "SELECT typeof(labels_total) FROM snapshots WHERE printer_ip='10.0.0.1'"
@@ -448,7 +430,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """meters_total should be stored as REAL in SQLite."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.5, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.5, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         cursor = conn.execute(
             "SELECT typeof(meters_total) FROM snapshots WHERE printer_ip='10.0.0.1'"
@@ -461,7 +443,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """Model should be stored as TEXT."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.0, "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
         cursor = conn.execute(
             "SELECT typeof(model_name) FROM snapshots WHERE printer_ip='10.0.0.1'"
@@ -474,7 +456,7 @@ class TestDataTypeCoercion(unittest.TestCase):
         """Integer meters should be stored and retrieved as float."""
         conn = db.init_db(":memory:")
         db.save_snapshot(
-            conn, "10.0.0.1", 1000, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            conn, "10.0.0.1", 1000, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         snap = db.get_latest_snapshot(conn, "10.0.0.1")
         # Even though we passed 50.0 (float), it should be retrievable

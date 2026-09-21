@@ -90,8 +90,8 @@ class TestComputeWeekly(unittest.TestCase):
         # 2026-09-17: data already in meters (collection-time conversion)
         ts_start = _epoch_for_date("2026-09-17", 7, 0)
         ts_end = _epoch_for_date("2026-09-17", 12, 0)
-        db.save_snapshot(conn, "10.0.0.1", 100, 50.0, "m", "Zebra ZT230", timestamp=ts_start)
-        db.save_snapshot(conn, "10.0.0.1", 120, 60.0, "m", "Zebra ZT230", timestamp=ts_end)
+        db.save_snapshot(conn, "10.0.0.1", 100, 50.0, "Zebra ZT230", timestamp=ts_start)
+        db.save_snapshot(conn, "10.0.0.1", 120, 60.0, "Zebra ZT230", timestamp=ts_end)
 
         # Patch to return our still-open connection
         with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
@@ -126,10 +126,10 @@ class TestComputeWeekly(unittest.TestCase):
 
         for ip in ("10.0.0.1", "10.0.0.2"):
             db.save_snapshot(
-                conn, ip, 10, 1.0, "m", "Model", timestamp=_epoch_for_date("2026-09-17", 8, 0)
+                conn, ip, 10, 1.0, "Model", timestamp=_epoch_for_date("2026-09-17", 8, 0)
             )
             db.save_snapshot(
-                conn, ip, 20, 2.0, "m", "Model", timestamp=_epoch_for_date("2026-09-17", 10, 0)
+                conn, ip, 20, 2.0, "Model", timestamp=_epoch_for_date("2026-09-17", 10, 0)
             )
 
         with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
@@ -147,10 +147,10 @@ class TestComputeWeekly(unittest.TestCase):
 
         for day in ("2026-09-07", "2026-09-14"):
             db.save_snapshot(
-                conn, "10.0.0.1", 50, 5.0, "m", "Zebra ZT230", timestamp=_epoch_for_date(day, 8, 0)
+                conn, "10.0.0.1", 50, 5.0, "Zebra ZT230", timestamp=_epoch_for_date(day, 8, 0)
             )
             db.save_snapshot(
-                conn, "10.0.0.1", 60, 6.0, "m", "Zebra ZT230", timestamp=_epoch_for_date(day, 10, 0)
+                conn, "10.0.0.1", 60, 6.0, "Zebra ZT230", timestamp=_epoch_for_date(day, 10, 0)
             )
 
         with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
@@ -170,7 +170,6 @@ class TestComputeWeekly(unittest.TestCase):
             "10.0.0.1",
             100,
             50.0,
-            "m",
             "Zebra ZT230",
             timestamp=_epoch_for_date("2026-09-17", 9, 0),
         )

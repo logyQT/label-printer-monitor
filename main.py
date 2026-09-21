@@ -310,7 +310,6 @@ def run_collection(config: Config) -> tuple[int, int, int]:
                 printer_ip=ip,
                 labels_total=counters.get("labels_total"),
                 meters_total=counters.get("meters_total"),
-                meter_unit="m",
                 model_name=counters.get("model_name", ""),
             )
             success += 1

@@ -68,42 +68,42 @@ class TestSaveSnapshot(unittest.TestCase):
 
     def test_insert_new_snapshot(self) -> None:
         result = db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.5, "m", "Zebra ZT230", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.5, "Zebra ZT230", timestamp="2026-09-17T10:00:00"
         )
         self.assertTrue(result)
 
     def test_idempotent_insert(self) -> None:
         ts = "2026-09-17T10:00:00"
-        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.5, "m", "Zebra", timestamp=ts)
-        result = db.save_snapshot(self.conn, "10.0.0.1", 200, 100.0, "m", "Zebra", timestamp=ts)
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.5, "Zebra", timestamp=ts)
+        result = db.save_snapshot(self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp=ts)
         self.assertFalse(result)
 
     def test_different_timestamps_allowed(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.5, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.5, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         result = db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "m", "Zebra", timestamp="2026-09-17T10:05:00"
+            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
         )
         self.assertTrue(result)
 
     def test_different_printers_allowed(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.5, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.5, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         result = db.save_snapshot(
-            self.conn, "10.0.0.2", 200, 100.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.2", 200, 100.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         self.assertTrue(result)
 
     def test_none_values_allowed(self) -> None:
         result = db.save_snapshot(
-            self.conn, "10.0.0.1", None, None, "m", "", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", None, None, "", timestamp="2026-09-17T10:00:00"
         )
         self.assertTrue(result)
 
     def test_default_timestamp(self) -> None:
-        result = db.save_snapshot(self.conn, "10.0.0.1", 100, 50.5, "m", "Zebra")
+        result = db.save_snapshot(self.conn, "10.0.0.1", 100, 50.5, "Zebra")
         self.assertTrue(result)
 
 
@@ -122,10 +122,10 @@ class TestGetLatestSnapshot(unittest.TestCase):
 
     def test_returns_latest(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "m", "Zebra", timestamp="2026-09-17T10:05:00"
+            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
         )
         result = db.get_latest_snapshot(self.conn, "10.0.0.1")
         assert result is not None
@@ -134,10 +134,10 @@ class TestGetLatestSnapshot(unittest.TestCase):
 
     def test_different_printer(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.2", 300, 150.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.2", 300, 150.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         result = db.get_latest_snapshot(self.conn, "10.0.0.2")
         assert result is not None
@@ -145,7 +145,7 @@ class TestGetLatestSnapshot(unittest.TestCase):
 
     def test_returns_dict(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         result = db.get_latest_snapshot(self.conn, "10.0.0.1")
         assert result is not None
@@ -154,7 +154,6 @@ class TestGetLatestSnapshot(unittest.TestCase):
         self.assertIn("timestamp", result)
         self.assertIn("labels_total", result)
         self.assertIn("meters_total", result)
-        self.assertIn("meter_unit", result)
         self.assertIn("model_name", result)
 
 
@@ -169,7 +168,7 @@ class TestGetSnapshotAt(unittest.TestCase):
 
     def test_exact_match(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         result = db.get_snapshot_at(self.conn, "10.0.0.1", "2026-09-17T10:00:00")
         assert result is not None
@@ -177,10 +176,10 @@ class TestGetSnapshotAt(unittest.TestCase):
 
     def test_closest_before(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "m", "Zebra", timestamp="2026-09-17T10:05:00"
+            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
         )
         result = db.get_snapshot_at(self.conn, "10.0.0.1", "2026-09-17T10:03:00")
         assert result is not None
@@ -202,10 +201,10 @@ class TestGetHistory(unittest.TestCase):
 
     def test_returns_all_history(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "m", "Zebra", timestamp="2026-09-17T10:05:00"
+            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
         )
         result = db.get_history(self.conn, "10.0.0.1")
         self.assertEqual(len(result), 2)
@@ -216,7 +215,7 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             100,
             50.0,
-            "cm",
+
             "Zebra",
             timestamp=int(datetime(2026, 9, 16, 10, 0, 0).timestamp()),
         )
@@ -225,7 +224,7 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             200,
             100.0,
-            "cm",
+
             "Zebra",
             timestamp=int(datetime(2026, 9, 17, 10, 0, 0).timestamp()),
         )
@@ -238,7 +237,7 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             100,
             50.0,
-            "cm",
+
             "Zebra",
             timestamp=int(datetime(2026, 9, 16, 10, 0, 0).timestamp()),
         )
@@ -247,7 +246,7 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             200,
             100.0,
-            "cm",
+
             "Zebra",
             timestamp=int(datetime(2026, 9, 17, 10, 0, 0).timestamp()),
         )
@@ -260,10 +259,10 @@ class TestGetHistory(unittest.TestCase):
 
     def test_chronological_order(self) -> None:
         db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "m", "Zebra", timestamp="2026-09-17T10:05:00"
+            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
         )
         db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "m", "Zebra", timestamp="2026-09-17T10:00:00"
+            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
         )
         result = db.get_history(self.conn, "10.0.0.1")
         self.assertEqual(result[0]["labels_total"], 100)
@@ -298,13 +297,12 @@ class TestRowToDict(unittest.TestCase):
     """Tests for _row_to_dict()."""
 
     def test_converts_tuple(self) -> None:
-        row = ("10.0.0.1", "2026-09-17T10:00:00", 100, 50.5, "m", "Zebra")
+        row = ("10.0.0.1", "2026-09-17T10:00:00", 100, 50.5, "Zebra")
         result = db._row_to_dict(row)
         self.assertEqual(result["printer_ip"], "10.0.0.1")
         self.assertEqual(result["timestamp"], "2026-09-17T10:00:00")
         self.assertEqual(result["labels_total"], 100)
         self.assertEqual(result["meters_total"], 50.5)
-        self.assertEqual(result["meter_unit"], "m")
         self.assertEqual(result["model_name"], "Zebra")
 
     def test_none_values(self) -> None:

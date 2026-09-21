@@ -128,7 +128,6 @@ Register in `src/adapters/__init__.py` and add the model to `config/config.json.
 | timestamp    | INTEGER | Unix epoch                 |
 | labels_total | INTEGER | Labels printed             |
 | meters_total | REAL    | Media length in meters     |
-| meter_unit   | TEXT    | Always `"m"`               |
 | model_name   | TEXT    | Printer model              |
 
 ## Project structure
