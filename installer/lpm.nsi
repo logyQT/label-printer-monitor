@@ -25,7 +25,6 @@ VIProductVersion "1.0.0.0"
 VIAddVersionKey "ProductName" "lpm"
 VIAddVersionKey "FileVersion" "1.0.0"
 VIAddVersionKey "FileDescription" "Label Printer Monitor Installer"
-; VIAddVersionKey "LegalCopyright" "logy"
 
 ; ---------------------------------------------------------------------------
 ; Interface
@@ -46,134 +45,35 @@ VIAddVersionKey "FileDescription" "Label Printer Monitor Installer"
 !insertmacro MUI_LANGUAGE "English"
 
 ; ---------------------------------------------------------------------------
-; PATH manipulation using pure built-in NSIS string functions
-;
-; Reads the system PATH from the registry, walks segments separated
-; by ";", and adds or removes the install directory.
-; ---------------------------------------------------------------------------
-
-!macro AddToPath DIR
-    ReadRegStr $0 HKLM \
-        "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
-
-    StrLen $1 $0
-    StrCmp $1 0 0 +3
-        WriteRegStr HKLM \
-            "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "${DIR}"
-        Goto add_done
-
-    ; Walk segments, skip any that already match DIR
-    StrCpy $2 ""    ; rebuilt PATH
-    StrCpy $3 ""    ; current segment
-    StrCpy $4 0     ; position
-
-    add_loop:
-        StrCpy $5 $0 1 $4
-        StrCmp $5 ";" add_seg_end
-        StrCmp $5 "" add_seg_end
-        StrCpy $3 "$3$5"
-        IntOp $4 $4 + 1
-        Goto add_loop
-
-    add_seg_end:
-        ; Compare segment to DIR (case-insensitive)
-        StrCmpS $3 "${DIR}" add_skip
-        StrLen $5 $2
-        StrCmp $5 0 add_first_seg
-        StrCpy $5 $2 1 -1
-        StrCmp $5 ";" add_append_no_semi
-        StrCpy $2 "$2;$3"
-        Goto add_continue
-        add_append_no_semi:
-        StrCpy $2 "$2$3"
-        Goto add_continue
-
-        add_first_seg:
-        StrCpy $2 "$3"
-
-        add_continue:
-        StrCpy $3 ""
-        StrCmp $5 "" add_done
-        IntOp $4 $4 + 1
-        Goto add_loop
-
-        add_skip:
-        StrCpy $3 ""
-        StrCmp $5 "" add_done
-        IntOp $4 $4 + 1
-        Goto add_loop
-
-    add_done:
-        WriteRegStr HKLM \
-            "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$2"
-!macroend
-
-!macro RemoveFromPath DIR
-    ReadRegStr $0 HKLM \
-        "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
-
-    StrLen $1 $0
-    StrCmp $1 0 remove_done
-
-    StrCpy $2 ""    ; rebuilt PATH
-    StrCpy $3 ""    ; current segment
-    StrCpy $4 0     ; position
-
-    remove_loop:
-        StrCpy $5 $0 1 $4
-        StrCmp $5 ";" remove_seg_end
-        StrCmp $5 "" remove_seg_end
-        StrCpy $3 "$3$5"
-        IntOp $4 $4 + 1
-        Goto remove_loop
-
-    remove_seg_end:
-        StrCmpS $3 "${DIR}" remove_skip
-        StrLen $5 $2
-        StrCmp $5 0 remove_first_seg
-        StrCpy $5 $2 1 -1
-        StrCmp $5 ";" remove_append_no_semi
-        StrCpy $2 "$2;$3"
-        Goto remove_continue
-        remove_append_no_semi:
-        StrCpy $2 "$2$3"
-        Goto remove_continue
-
-        remove_first_seg:
-        StrCpy $2 "$3"
-
-        remove_continue:
-        StrCpy $3 ""
-        StrCmp $5 "" remove_done
-        IntOp $4 $4 + 1
-        Goto remove_loop
-
-        remove_skip:
-        StrCpy $3 ""
-        StrCmp $5 "" remove_done
-        IntOp $4 $4 + 1
-        Goto remove_loop
-
-    remove_done:
-        WriteRegStr HKLM \
-            "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$2"
-!macroend
-
-; ---------------------------------------------------------------------------
 ; Install
 ; ---------------------------------------------------------------------------
 Section "Install"
     SetOutPath "$INSTDIR"
-
     File "..\dist\lpm.exe"
 
     WriteRegStr HKLM "Software\lpm" "InstallDir" "$INSTDIR"
 
-    !insertmacro AddToPath "$INSTDIR"
+    ; --- Add to system PATH (simple append) ---
+    ReadRegStr $0 HKLM \
+        "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
+
+    StrLen $1 $0
+    ${If} $1 == 0
+        StrCpy $0 "$INSTDIR"
+    ${Else}
+        StrCpy $2 $0 1 -1
+        ${If} $2 == ";"
+            StrCpy $0 "$0$INSTDIR"
+        ${Else}
+            StrCpy $0 "$0;$INSTDIR"
+        ${EndIf}
+    ${EndIf}
+    WriteRegStr HKLM \
+        "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$0"
 
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
-    ; Add/Remove Programs entry
+    ; --- Add/Remove Programs entry ---
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm" \
         "DisplayName" "lpm - Label Printer Monitor"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm" \
@@ -201,8 +101,43 @@ SectionEnd
 ; Uninstall
 ; ---------------------------------------------------------------------------
 Section "Uninstall"
-    !insertmacro RemoveFromPath "$INSTDIR"
+    ; --- Remove from system PATH ---
+    ReadRegStr $0 HKLM \
+        "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
 
+    StrLen $1 $0
+    StrLen $2 "$INSTDIR"
+
+    ${If} $1 > 0
+        ; Exact match (PATH is only the install dir)
+        StrCmp $0 "$INSTDIR" remove_clear
+
+        ; Starts with "DIR;"
+        StrCpy $3 $0 $2
+        StrCmp $3 "$INSTDIR" 0 remove_try_end
+        StrCpy $4 $0 1 $2
+        StrCmp $4 ";" 0 remove_try_end
+        IntOp $3 $2 + 1
+        StrCpy $0 $0 "" $3
+        Goto remove_write
+
+        remove_try_end:
+        ; Ends with ";DIR"
+        IntOp $3 $1 - $2
+        StrCpy $4 $0 1 $3
+        StrCmp $4 ";" 0 remove_write
+        StrCpy $0 $0 $3
+        Goto remove_write
+
+        remove_clear:
+        StrCpy $0 ""
+
+        remove_write:
+        WriteRegStr HKLM \
+            "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$0"
+    ${EndIf}
+
+    ; --- Delete files ---
     Delete "$INSTDIR\lpm.exe"
     Delete "$INSTDIR\uninstall.exe"
     RMDir  "$INSTDIR"
