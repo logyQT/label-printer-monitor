@@ -42,7 +42,18 @@ def build() -> None:
         # Windows console app
         "--windows-console-mode=force",
 
-        # Strip unused stdlib modules to shrink the output
+        # ── Strip unnecessary packages ────────────────────────────────
+        # cryptography chain (16+ MB) — only needed for SNMPv3 encryption;
+        # SNMP v1/v2c uses plaintext community strings, so this is dead weight.
+        "--nofollow-import-to=cryptography,pysnmpcrypto,cffi,_cffi_backend,pycparser",
+
+        # Unused transitive deps (requests, Jinja2, etc.)
+        "--nofollow-import-to=charset_normalizer,certifi,markupsafe",
+
+        # Unused stdlib C extensions — asyncio handles missing ssl gracefully
+        "--nofollow-import-to=_ssl,_hashlib,_decimal,_bz2,_lzma,_wmi,_uuid,_multiprocessing,pyexpat",
+
+        # Unused stdlib pure-Python modules
         "--nofollow-import-to=tkinter,unittest,pydoc,doctest,lib2to3,email,html,http,xml,py_compile,compileall",
 
         # Compiler optimizations
