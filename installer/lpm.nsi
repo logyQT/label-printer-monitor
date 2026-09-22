@@ -1,7 +1,7 @@
 ; NSIS installer script for lpm (Label Printer Monitor)
 ;
 ; Build:
-;   1. python build.py               -> dist/lpm.exe
+;   1. python build.py               -> dist/main.dist/lpm.exe (standalone)
 ;   2. makensis installer\lpm.nsi    -> installer/lpm-setup.exe
 ;
 ; Requires: NSIS 3.x (https://nsis.sourceforge.io/Download)
@@ -48,15 +48,40 @@ VIAddVersionKey "FileDescription" "Label Printer Monitor Installer"
 ; Install
 ; ---------------------------------------------------------------------------
 Section "Install"
+    ; Standalone build: ship everything from dist/main.dist/
     SetOutPath "$INSTDIR"
-    File "..\dist\lpm.exe"
+    File /r "..\dist\main.dist\*.*"
 
     WriteRegStr HKLM "Software\lpm" "InstallDir" "$INSTDIR"
 
-    ; --- Add to system PATH (simple append) ---
+    ; --- Add to system PATH (remove first to avoid duplicates, then append) ---
     ReadRegStr $0 HKLM \
         "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
 
+    StrLen $1 $0
+    StrLen $2 "$INSTDIR"
+
+    ${If} $1 > 0
+        ; Remove existing entry first (handles exact, start, end positions)
+        StrCmp $0 "$INSTDIR" path_only_dir
+        StrCpy $3 $0 $2
+        StrCmp $3 "$INSTDIR" 0 path_try_end
+        StrCpy $4 $0 1 $2
+        StrCmp $4 ";" 0 path_try_end
+        IntOp $3 $2 + 1
+        StrCpy $0 $0 "" $3
+        Goto path_append
+        path_try_end:
+        IntOp $3 $1 - $2
+        StrCpy $4 $0 1 $3
+        StrCmp $4 ";" 0 path_append
+        StrCpy $0 $0 $3
+        Goto path_append
+        path_only_dir:
+        StrCpy $0 ""
+    ${EndIf}
+
+    path_append:
     StrLen $1 $0
     ${If} $1 == 0
         StrCpy $0 "$INSTDIR"
@@ -137,10 +162,8 @@ Section "Uninstall"
             "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$0"
     ${EndIf}
 
-    ; --- Delete files ---
-    Delete "$INSTDIR\lpm.exe"
-    Delete "$INSTDIR\uninstall.exe"
-    RMDir  "$INSTDIR"
+    ; --- Delete all installed files ---
+    RMDir /r "$INSTDIR"
 
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm"
     DeleteRegKey HKLM "Software\lpm"

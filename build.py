@@ -27,7 +27,12 @@ def build() -> None:
     cmd = [
         sys.executable, "-m", "nuitka",
         "--standalone",
-        "--onefile",
+
+        # -- Standalone (directory) mode instead of --onefile.
+        #    Onefile extracts to a temp dir on every launch (~1 s overhead).
+        #    Standalone runs directly from its folder — near-instant startup.
+        #    Zip the dist/main.dist/ folder for distribution if needed.
+
         "--output-filename=lpm.exe",
         "--output-dir=dist",
 
@@ -37,6 +42,11 @@ def build() -> None:
         # Windows console app
         "--windows-console-mode=force",
 
+        # Strip unused stdlib modules to shrink the output
+        "--nofollow-import-to=tkinter,unittest,pydoc,doctest,lib2to3,email,html,http,xml,py_compile,compileall",
+
+        # Compiler optimizations
+        "--lto=yes",                     # link-time optimisation (smaller + faster)
         "--assume-yes-for-downloads",
 
         # Entry point
@@ -52,10 +62,18 @@ def build() -> None:
         print(f"\nBuild failed (exit code {result.returncode})", file=sys.stderr)
         sys.exit(result.returncode)
 
-    exe = os.path.join(DIST, "lpm.exe")
+    exe = os.path.join(DIST, "main.dist", "lpm.exe")
     if os.path.isfile(exe):
         size_mb = os.path.getsize(exe) / (1024 * 1024)
-        print(f"\nBuild succeeded: {exe} ({size_mb:.1f} MB)")
+        dist_dir = os.path.join(DIST, "main.dist")
+        total_mb = sum(
+            os.path.getsize(os.path.join(dp, f))
+            for dp, _, fnames in os.walk(dist_dir)
+            for f in fnames
+        ) / (1024 * 1024)
+        print(f"\nBuild succeeded: {exe}")
+        print(f"  lpm.exe:    {size_mb:.1f} MB")
+        print(f"  Total dist: {total_mb:.1f} MB  (zip this folder for distribution)")
     else:
         print(f"\nBuild completed but {exe} not found", file=sys.stderr)
         sys.exit(1)

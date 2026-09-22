@@ -48,10 +48,11 @@ Lint: `ruff check .` / `ruff format .` / `mypy`
 Build with [Nuitka](https://nuitka.net/):
 
 ```bash
-python build.py            # produces dist/lpm.exe
+python build.py            # produces dist/main.dist/lpm.exe (standalone directory)
 ```
 
-Move `dist/lpm.exe` somewhere permanent, then add that directory to PATH.
+Zip `dist/main.dist/` for distribution. On the target machine, extract
+somewhere permanent and add that directory to PATH.
 
 **Windows PowerShell:**
 
@@ -59,6 +60,8 @@ Move `dist/lpm.exe` somewhere permanent, then add that directory to PATH.
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
 [Environment]::SetEnvironmentVariable("Path", "$currentPath;C:\Tools\lpm", "User")
 ```
+
+Or build an installer: `makensis installer/lpm.nsi` (ships the full `main.dist/` directory).
 
 Usage is identical, replace `python main.py` with `lpm`:
 
