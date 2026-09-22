@@ -2,6 +2,7 @@
 
 Usage:
     python snmpget.py <ip> <oid>
+    python snmpget.py <ip> <oid> -v1
     python snmpget.py <ip> <oid> --community private
     python snmpget.py <ip> <oid> --timeout 10
 """
@@ -49,13 +50,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SNMP GET utility")
     parser.add_argument("ip", help="Target IP address")
     parser.add_argument("oid", help="OID to query")
+    version_group = parser.add_mutually_exclusive_group()
+    version_group.add_argument("-v1", action="store_const", dest="version", const=0, help="Use SNMPv1")
+    version_group.add_argument("-v2c", action="store_const", dest="version", const=1, help="Use SNMPv2c (default)")
+    parser.set_defaults(version=1)
     parser.add_argument("--community", default="public", help="SNMP community (default: public)")
     parser.add_argument("--timeout", type=int, default=5, help="Timeout in seconds (default: 5)")
     parser.add_argument("--retries", type=int, default=2, help="Retry count (default: 2)")
     args = parser.parse_args()
 
     try:
-        value, tag = get(args.ip, args.oid, args.community, args.timeout, args.retries)
+        value, tag = get(args.ip, args.oid, args.community, args.timeout, args.retries, version=args.version)
         print(format_value(value, tag))
     except SnmpTimeout as e:
         print(f"TIMEOUT: {e}")

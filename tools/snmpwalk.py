@@ -2,6 +2,7 @@
 
 Usage:
     python snmpwalk.py <ip> <oid>
+    python snmpwalk.py <ip> <oid> -v1
     python snmpwalk.py <ip> <oid> --community private
     python snmpwalk.py <ip> <oid> --timeout 10 --max 200
 """
@@ -94,6 +95,7 @@ async def walk(
     max_oids: int = 500,
     timeout_sec: int = 5,
     retries: int = 2,
+    version: int = 1,
 ) -> list[tuple[str, str | bytes | int, int]]:
     """Walk an OID subtree using GETNEXT."""
     dispatcher = SnmpDispatcher()
@@ -106,7 +108,7 @@ async def walk(
     for _ in range(max_oids):
         error_indication, error_status, error_index, var_binds = await get_cmd(
             dispatcher,
-            CommunityData(community),
+            CommunityData(community, mpModel=version),
             target,
             ObjectType(ObjectIdentity(current_oid)),
         )
@@ -139,6 +141,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SNMP walk utility")
     parser.add_argument("ip", help="Target IP address")
     parser.add_argument("oid", help="Starting OID")
+    version_group = parser.add_mutually_exclusive_group()
+    version_group.add_argument("-v1", action="store_const", dest="version", const=0, help="Use SNMPv1")
+    version_group.add_argument("-v2c", action="store_const", dest="version", const=1, help="Use SNMPv2c (default)")
+    parser.set_defaults(version=1)
     parser.add_argument("--community", default="public", help="SNMP community (default: public)")
     parser.add_argument(
         "--timeout", type=int, default=5, help="Timeout per OID in seconds (default: 5)"
@@ -147,7 +153,8 @@ def main() -> None:
     parser.add_argument("--max", type=int, default=500, help="Max OIDs to walk (default: 500)")
     args = parser.parse_args()
 
-    print(f"Walking {args.oid} on {args.ip} (max={args.max})...")
+    proto = "SNMPv1" if args.version == 0 else "SNMPv2c"
+    print(f"Walking {args.oid} on {args.ip} ({proto}, max={args.max})...")
     print()
 
     results = asyncio.run(
@@ -158,6 +165,7 @@ def main() -> None:
             args.max,
             args.timeout,
             args.retries,
+            args.version,
         )
     )
 

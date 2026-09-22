@@ -4,7 +4,6 @@ Usage:
     python main.py --init                   # create config from the example
     python main.py --collect                # collect from all printers
     python main.py --collect --verbose      # with SNMP debug output
-    python main.py --collect --config path/to/config.json  # alternate config
     python main.py --report                 # weekly report (current week)
     python main.py --report --from 2026-09-01 --to 2026-09-30
     python main.py --report --csv           # export CSV
@@ -20,6 +19,7 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import sys
 from datetime import datetime
 from typing import Any
@@ -121,6 +121,22 @@ def _prune_backups(keep: int) -> None:
         log.debug("Pruned old backup: %s", entry.name)
 
 
+def _verify_db(db_path: str) -> None:
+    """Run SQLite integrity check; raise if the database is corrupted."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+            if result[0] != "ok":
+                raise SystemExit(
+                    f"ERROR: Database integrity check failed: {result[0]}"
+                )
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        raise SystemExit(f"ERROR: Cannot open database: {exc}") from exc
+
+
 def backup_data(config_path: str | None = None, config: Config | None = None) -> str:
     """Snapshot config + db into data/backups/<timestamp>/ before a run."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -137,12 +153,13 @@ def backup_data(config_path: str | None = None, config: Config | None = None) ->
     if os.path.exists(schema):
         shutil.copy2(schema, os.path.join(dest, "config.json.schema"))
 
-    # Backup database
+    # Backup database (verify integrity first)
     cfg = config or {}
     db_file = cfg.get("db", {}).get("filename", "")
     if db_file and db_file != ":memory:":
         db_path = os.path.join(data_dir(), db_file)
         if os.path.exists(db_path):
+            _verify_db(db_path)
             shutil.copy2(db_path, os.path.join(dest, db_file))
 
     # Prune old backups (default keep=50 if not configured)
@@ -358,9 +375,9 @@ def run_collection(config: Config, dry: bool = False) -> tuple[int, int, int]:
 
 
 def _handle_collect(args: argparse.Namespace) -> None:
-    config = load_config(args.config)
+    config = load_config()
     if not args.dry:
-        backup_data(args.config, config)
+        backup_data(config=config)
     log_dir = os.path.join(_project_root(), config.get("log_dir", "logs"))
     log_file = setup_logging(log_dir, verbose=args.verbose)
     log.info(f"Log file: {log_file}")
@@ -375,13 +392,13 @@ def _handle_collect(args: argparse.Namespace) -> None:
 def _handle_validate(args: argparse.Namespace) -> None:
     from src.validate import Issue, validate_network, validate_setup
 
-    config_path = args.config or _config_path()
+    config_path = _config_path()
 
     issues: list[Issue] = validate_setup(config_path, _project_root())
 
     if args.network:
         with contextlib.suppress(SystemExit):
-            issues += validate_network(load_config(args.config))
+            issues += validate_network(load_config())
 
     # Without --verbose, only show warnings and errors.
     if not args.verbose:
@@ -403,8 +420,8 @@ def _handle_validate(args: argparse.Namespace) -> None:
 def _handle_report(args: argparse.Namespace) -> None:
     from src.report import compute_weekly, export_csv, print_report
 
-    config = load_config(args.config)
-    backup_data(args.config, config)
+    config = load_config()
+    backup_data(config=config)
     from_date = args.from_date or datetime.now().strftime("%Y-%m-%d")
     to_date = args.to_date or datetime.now().strftime("%Y-%m-%d")
 
@@ -444,9 +461,6 @@ def main() -> None:
     parser.add_argument(
         "--dry", action="store_true", help="(collect) Dry run: collect but don't save to database"
     )
-
-    # Config selection (all modes)
-    parser.add_argument("--config", help="Path to a config JSON file (default: config/config.json)")
 
     # Report-specific flags
     parser.add_argument("--from", dest="from_date", help="(report) Start date (YYYY-MM-DD)")

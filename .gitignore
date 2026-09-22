@@ -37,6 +37,6 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Build directory
-
+# Build output
 dist/
+installer/*.exe
