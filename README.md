@@ -127,13 +127,13 @@ Register in `src/adapters/__init__.py` and add the model to `config/config.json.
 
 `snapshots` table:
 
-| Column       | Type    | Description                |
-| ------------ | ------- | -------------------------- |
-| printer_ip   | TEXT    | Printer IP                 |
-| timestamp    | INTEGER | Unix epoch                 |
-| labels_total | INTEGER | Labels printed             |
-| meters_total | FLOAT   | Media length in meters     |
-| model_name   | TEXT    | Printer model              |
+| Column       | Type    | Description            |
+| ------------ | ------- | ---------------------- |
+| printer_ip   | TEXT    | Printer IP             |
+| timestamp    | INTEGER | Unix epoch             |
+| labels_total | INTEGER | Labels printed         |
+| meters_total | FLOAT   | Media length in meters |
+| model_name   | TEXT    | Printer model          |
 
 ## Project structure
 
@@ -158,4 +158,93 @@ build.py                # Nuitka build script
 tools/
   snmpget.py            # single OID query (standalone)
   snmpwalk.py           # OID subtree walker (standalone)
+```
+
+## Architecture
+
+```mermaid
+flowchart TD
+
+subgraph group_orchestration["CLI Orchestration"]
+  node_cli["Command CLI<br/>[main.py]"]
+  node_config["Runtime Config"]
+  node_backup[("Database Backup<br/>[main.py]")]
+end
+
+subgraph group_collection["Collection Engine"]
+  node_registry["Adapter Registry<br/>[__init__.py]"]
+  node_base_engine["Adapter Engine<br/>[base.py]"]
+  node_zebra_zt411["Zebra ZT411<br/>[zebra_zt411.py]"]
+  node_zebra_gx430t["Zebra GX430t<br/>[zebra_gx430t.py]"]
+  node_sato_cl4nx["Sato CL4NX<br/>[sato_cl4nx_plus.py]"]
+  node_snmp["SNMP Client<br/>[snmp_client.py]"]
+  node_converters["Unit Converters<br/>[converters.py]"]
+end
+
+subgraph group_persistence["Persistence Reporting"]
+  node_sqlite[("SQLite Snapshots<br/>[db.py]")]
+  node_report["Weekly Reports<br/>[report.py]"]
+  node_csv["CSV Export<br/>[report.py]"]
+end
+
+subgraph group_operations["Operations Validation"]
+  node_validator["Setup Validator<br/>[validate.py]"]
+  node_schema["Config Schema<br/>[config.json.schema]"]
+end
+
+node_user(("Operator"))
+node_printer["Label Printers"]
+
+node_user -->|"invokes commands"| node_cli
+node_cli -->|"loads config"| node_config
+node_cli -->|"backs up database"| node_backup
+node_cli -->|"starts collection"| node_registry
+node_registry -->|"creates adapter"| node_zebra_zt411
+node_registry -->|"creates adapter"| node_zebra_gx430t
+node_registry -->|"creates adapter"| node_sato_cl4nx
+node_zebra_zt411 -->|"extends engine"| node_base_engine
+node_zebra_gx430t -->|"extends engine"| node_base_engine
+node_sato_cl4nx -->|"extends engine"| node_base_engine
+node_base_engine -->|"reads counters"| node_snmp
+node_base_engine -->|"converts units"| node_converters
+node_snmp -->|"queries SNMP"| node_printer
+node_cli -->|"writes snapshots"| node_sqlite
+node_cli -->|"runs report"| node_report
+node_report -->|"reads history"| node_sqlite
+node_report -->|"writes CSV"| node_csv
+node_report -->|"prints report"| node_user
+node_cli -->|"runs validation"| node_validator
+node_validator -->|"checks config"| node_config
+node_validator -->|"validates schema"| node_schema
+node_validator -->|"checks adapters"| node_registry
+node_validator -->|"checks database"| node_sqlite
+node_validator -.->|"checks network"| node_snmp
+
+click node_cli "https://github.com/logyqt/label-printer-monitor/blob/main/main.py"
+click node_backup "https://github.com/logyqt/label-printer-monitor/blob/main/main.py"
+click node_registry "https://github.com/logyqt/label-printer-monitor/blob/main/src/adapters/__init__.py"
+click node_base_engine "https://github.com/logyqt/label-printer-monitor/blob/main/src/adapters/base.py"
+click node_zebra_zt411 "https://github.com/logyqt/label-printer-monitor/blob/main/src/adapters/zebra_zt411.py"
+click node_zebra_gx430t "https://github.com/logyqt/label-printer-monitor/blob/main/src/adapters/zebra_gx430t.py"
+click node_sato_cl4nx "https://github.com/logyqt/label-printer-monitor/blob/main/src/adapters/sato_cl4nx_plus.py"
+click node_snmp "https://github.com/logyqt/label-printer-monitor/blob/main/src/snmp_client.py"
+click node_converters "https://github.com/logyqt/label-printer-monitor/blob/main/src/converters.py"
+click node_sqlite "https://github.com/logyqt/label-printer-monitor/blob/main/src/db.py"
+click node_report "https://github.com/logyqt/label-printer-monitor/blob/main/src/report.py"
+click node_csv "https://github.com/logyqt/label-printer-monitor/blob/main/src/report.py"
+click node_validator "https://github.com/logyqt/label-printer-monitor/blob/main/src/validate.py"
+click node_schema "https://github.com/logyqt/label-printer-monitor/blob/main/config/config.json.schema"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_cli,node_config,node_backup toneBlue
+class node_registry,node_base_engine,node_zebra_zt411,node_zebra_gx430t,node_sato_cl4nx,node_snmp,node_converters toneAmber
+class node_sqlite,node_report,node_csv toneMint
+class node_validator,node_schema toneRose
+class node_user,node_printer toneIndigo
 ```
