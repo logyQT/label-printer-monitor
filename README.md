@@ -48,7 +48,9 @@ Lint: `ruff check .` / `ruff format .` / `mypy`
 Build with [Nuitka](https://nuitka.net/):
 
 ```bash
-python build.py            # produces dist/main.dist/lpm.exe (standalone directory)
+build.bat                     # full pipeline: exe + installer
+build.bat --exe               # build exe only -> dist/main.dist/lpm.exe
+build.bat --installer         # build installer only -> installer/lpm-setup.exe
 ```
 
 Zip `dist/main.dist/` for distribution. On the target machine, extract
