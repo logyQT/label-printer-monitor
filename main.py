@@ -65,7 +65,7 @@ def _project_root() -> str:
     All config-relative paths (log_dir, db filename, etc.) resolve
     against this.
     """
-    return DATA_ROOT
+    return DATA_ROOT  # type: ignore[no-any-return]  # env.DATA_ROOT is lazy (module __getattr__ -> Any)
 
 
 def _config_path() -> str:
@@ -353,7 +353,9 @@ def run_collection(config: Config, dry: bool = False) -> tuple[int, int, int]:
                 fail += 1
                 continue
 
-            if not dry:
+            # conn is None exactly when dry=True (see run_collection), so this
+            # guard doubles as the mypy narrowing for save_snapshot.
+            if conn is not None:
                 db.save_snapshot(
                     conn,
                     printer_ip=ip,

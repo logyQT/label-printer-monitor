@@ -4,6 +4,8 @@ All metric values are standardized to **meters** at collection time.
 These converters are the single source of truth for unit → meters math.
 """
 
+from collections.abc import Callable
+
 # ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
@@ -32,7 +34,7 @@ def ft_to_m(value: float) -> float:
 # Lookup table  (unit string → converter function)
 # ---------------------------------------------------------------------------
 
-_UNIT_TO_M: dict[str, callable] = {
+_UNIT_TO_M: dict[str, Callable[[float], float]] = {
     "m": lambda v: v,                    # already meters – passthrough
     "linearMeters": lambda v: v,         # Sato alias for meters
     "cm": cm_to_m,
