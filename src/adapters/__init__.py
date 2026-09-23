@@ -5,12 +5,17 @@ from typing import Any
 from src.adapters.base import PrinterAdapter
 from src.adapters.sato_cl4nx_plus import SatoCL4NXPlusAdapter
 from src.adapters.zebra_gx430t import ZebraGX430tAdapter
+from src.adapters.zebra_zd621 import ZebraZD621Adapter
+from src.adapters.zebra_zt230 import ZebraZT230Adapter
 from src.adapters.zebra_zt411 import ZebraZT411Adapter
 
 ADAPTER_CLASSES: tuple[type[PrinterAdapter], ...] = (
     ZebraZT411Adapter,
     ZebraGX430tAdapter,
     SatoCL4NXPlusAdapter,
+    # Experimental: Link-OS "200" range assumed, not yet verified on hardware.
+    ZebraZD621Adapter,
+    ZebraZT230Adapter,
 )
 
 # Backward-compat alias: model prefix -> adapter class, derived from the

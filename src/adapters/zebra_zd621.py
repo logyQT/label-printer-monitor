@@ -1,19 +1,16 @@
-"""Zebra ZT411 adapter.
+"""Zebra ZD621 adapter - EXPERIMENTAL.
 
-Reads the Link-OS ZQL "200" range (zql-zebra-ql / zql-ql-odometer):
+The ZD621 is a Link-OS printer, so it is read through the same ZQL "200"
+range the ZT411 adapter uses (all three OIDs confirmed on a live ZT411,
+see zebra_zt411.py):
 
-- 10642.200.19.7.0 = model name, e.g. "ZT411"       (poke)
+- 10642.200.19.7.0 = model name, e.g. "ZD621"       (poke)
 - 10642.200.17.2.0 = total label count, STRING "302318"
 - 10642.200.17.3.0 = total print length, "555719 INCHES, 1411527 CENTIMETERS"
 
-All three confirmed on a live ZT411 (10.0.4.111), and the counters match
-the legacy ZEBRA-MIB objects this adapter used before, side by side:
-
-    10642.3.1.6.0 = 302318 labels   == 10642.200.17.2.0 = "302318"
-    10642.3.1.1.0 = 1411527 cm      == 10642.200.17.3.0 = "... 1411527 CENTIMETERS"
-
-The "200" range is what the other Link-OS printers expose too, so the
-ZD621 / ZT230 adapters read the same three OIDs.
+No ZD621 was available to verify against yet. If the printer stays
+unreachable, set ``snmp_version = 0``: pre-Link-OS firmware answers
+SNMPv1 only (the GX430t behaves that way).
 
 Declarative specification - see adapters.base for the engine.
 """
@@ -28,8 +25,8 @@ OID_METERS: str = "1.3.6.1.4.1.10642.200.17.3.0"  # "XX INCHES, XX CENTIMETERS"
 USAGE_PATTERN: str = r"(\d[\d,]*)\s*(CENTIMETERS|INCHES)"
 
 
-class ZebraZT411Adapter(PrinterAdapter):
-    model_prefixes = ("zebra zt411",)
+class ZebraZD621Adapter(PrinterAdapter):
+    model_prefixes = ("zebra zd621",)
     snmp_version = 1
     reachability_oid = OID_REACHABILITY
     metrics = (

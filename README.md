@@ -107,11 +107,18 @@ Register-ScheduledTask -TaskName "PrinterStatsPM" -Action $action -Trigger $trig
 
 All length values stored in **meters** (converted at collection time).
 
-| Printer         | Labels | Odometer |
-| --------------- | ------ | -------- |
-| Zebra ZT411     | yes    | yes      |
-| Zebra GX430t    | -      | yes      |
-| Sato CL4NX Plus | -      | yes      |
+| Printer         | Labels | Odometer | Notes                            |
+| --------------- | ------ | -------- | -------------------------------- |
+| Zebra ZT411     | yes    | yes      | Link-OS ".200" odometer          |
+| Zebra ZD621     | yes    | yes      | experimental (".200", unverified) |
+| Zebra ZT230     | yes    | yes      | experimental (".200", unverified) |
+| Zebra GX430t    | -      | yes      | SNMPv1, usage string only        |
+| Sato CL4NX Plus | -      | yes      |                                  |
+
+The ZD621 / ZT230 adapters assume Link-OS ZQL `.10642.200` objects (the
+same three OIDs the ZT411 reads) but have not been verified on hardware
+yet - if such a printer stays unreachable, set `snmp_version = 0` in its
+adapter (pre-Link-OS firmware answers SNMPv1 only).
 
 ## Adding an adapter
 
@@ -169,6 +176,7 @@ build.py                # Nuitka build script
 tools/
   snmpget.py            # single OID query (standalone)
   snmpwalk.py           # OID subtree walker (standalone)
+  linkos_walk.py        # walks all known Link-OS / ZEBRA-MIB OIDs (ranges, JSON/CSV)
 ```
 
 ## Architecture

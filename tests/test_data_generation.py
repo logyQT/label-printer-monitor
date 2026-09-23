@@ -151,7 +151,7 @@ class TestRealisticPrinterResponses(unittest.TestCase):
         mock_get.return_value = (b"ZTC ZT230-200dpi ZPL", TAG_OCTET_STRING)
         mock_retry.side_effect = [
             (15234, TAG_COUNTER32),  # labels
-            (50000, TAG_COUNTER32),  # meters
+            (b"19685 INCHES, 50000 CENTIMETERS", TAG_OCTET_STRING),  # print length
         ]
         result = self._make_adapter("192.168.40.249").get_counters()
 

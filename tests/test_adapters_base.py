@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.adapters.base import CounterResult, PrinterAdapter
+from src.adapters.base import CounterResult, PrinterAdapter, convert_value
 
 
 class ConcretePrinterAdapter(PrinterAdapter):
@@ -113,6 +113,25 @@ class TestStatusFromCode(unittest.TestCase):
         self.assertEqual(PrinterAdapter._status_from_code(4), "printing")
         self.assertEqual(PrinterAdapter._status_from_code(None), "offline")
         self.assertEqual(PrinterAdapter._status_from_code(99), "unknown")
+
+
+class TestConvertValueNumberDecoding(unittest.TestCase):
+    """convert_value() number converters tolerate Link-OS STRING counters."""
+
+    def test_int_from_bytes(self) -> None:
+        self.assertEqual(convert_value(b"302318", "int"), 302318)
+
+    def test_int_from_padded_bytes(self) -> None:
+        self.assertEqual(convert_value(b" 15234 ", "int"), 15234)
+
+    def test_int_from_int(self) -> None:
+        self.assertEqual(convert_value(42, "int"), 42)
+
+    def test_float_from_bytes(self) -> None:
+        self.assertEqual(convert_value(b"12.5", "float"), 12.5)
+
+    def test_str_decodes_bytes(self) -> None:
+        self.assertEqual(convert_value(b"ZT411", "str"), "ZT411")
 
 
 if __name__ == "__main__":

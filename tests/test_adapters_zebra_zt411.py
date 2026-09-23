@@ -1,9 +1,9 @@
 """Tests for adapters/zebra_zt411.py - Zebra ZT411 adapter.
 
-Tests cover:
-- Poke (reachability via model name OID)
-- Label counter retrieval
-- Meter counter retrieval (cm)
+The ZT411 reads the Link-OS ZQL "200" range.  Tests cover:
+- Poke (reachability via model name OID .200.19.7.0)
+- Label counter (STRING counter at .200.17.2.0)
+- Print length ("XX INCHES, XX CENTIMETERS" at .200.17.3.0 -> meters)
 - Unreachable printer
 - Partial OID responses
 - Byte-to-string model name decoding
@@ -32,40 +32,43 @@ class TestZebraZT411Adapter(unittest.TestCase):
         self.assertEqual(adapter.version, 1)
 
     def test_oids_defined(self) -> None:
-        """Module-level OIDs should be defined."""
-        self.assertEqual(OID_REACHABILITY, "1.3.6.1.4.1.10642.1.1.0")
-        self.assertEqual(OID_LABELS, "1.3.6.1.4.1.10642.3.1.6.0")
-        self.assertEqual(OID_METERS, "1.3.6.1.4.1.10642.3.1.1.0")
+        """Module-level OIDs point at the Link-OS '200' range."""
+        self.assertEqual(OID_REACHABILITY, "1.3.6.1.4.1.10642.200.19.7.0")
+        self.assertEqual(OID_LABELS, "1.3.6.1.4.1.10642.200.17.2.0")
+        self.assertEqual(OID_METERS, "1.3.6.1.4.1.10642.200.17.3.0")
 
     def test_class_oids(self) -> None:
-        """Class OIDS dict should contain labels_total."""
-        self.assertIn("labels_total", ZebraZT411Adapter.OIDS)
+        """OIDS is derived from the declared metrics."""
+        self.assertEqual(
+            ZebraZT411Adapter.OIDS,
+            {"labels_total": OID_LABELS, "meters_total": OID_METERS},
+        )
 
     @patch.object(ZebraZT411Adapter, "_snmp_get_retry")
     @patch.object(ZebraZT411Adapter, "_snmp_get")
     def test_full_response(self, mock_get: MagicMock, mock_retry: MagicMock) -> None:
-        """ZT411 with all OIDs available."""
-        mock_get.return_value = (b"ZTC ZT411-203dpi ZPL", TAG_OCTET_STRING)
+        """ZT411 with all OIDs available (STRING counters, usage string)."""
+        mock_get.return_value = (b"ZT411", TAG_OCTET_STRING)
         mock_retry.side_effect = [
-            (15234, TAG_COUNTER32),  # labels
-            (761700, TAG_COUNTER32),  # meters (cm)
+            (b"15234", TAG_OCTET_STRING),  # total label count (STRING)
+            (b"30000 INCHES, 761700 CENTIMETERS", TAG_OCTET_STRING),  # print length
         ]
         result = self._make_adapter().get_counters()
 
         self.assertTrue(result["reachable"])
         self.assertEqual(result["labels_total"], 15234)
-        self.assertAlmostEqual(result["meters_total"], 7617.0)  # 761700 cm → 7617.0 m
+        self.assertAlmostEqual(result["meters_total"], 7617.0)  # 761700 cm -> 7617.0 m
         self.assertEqual(result["meter_unit"], "m")
-        self.assertEqual(result["model_name"], "ZTC ZT411-203dpi ZPL")
+        self.assertEqual(result["model_name"], "ZT411")
 
     @patch.object(ZebraZT411Adapter, "_snmp_get_retry")
     @patch.object(ZebraZT411Adapter, "_snmp_get")
     def test_labels_only(self, mock_get: MagicMock, mock_retry: MagicMock) -> None:
-        """ZT411 with labels but no meters."""
+        """ZT411 with labels but no print length (INTEGER counters accepted too)."""
         mock_get.return_value = (b"ZTC ZT411", TAG_OCTET_STRING)
         mock_retry.side_effect = [
             (8901, TAG_COUNTER32),  # labels
-            (None, None),  # meters timeout
+            (None, None),  # print length timeout
         ]
         result = self._make_adapter().get_counters()
 
@@ -73,6 +76,22 @@ class TestZebraZT411Adapter(unittest.TestCase):
         self.assertEqual(result["labels_total"], 8901)
         self.assertIsNone(result["meters_total"])
         self.assertEqual(result["meter_unit"], "m")
+
+    @patch.object(ZebraZT411Adapter, "_snmp_get_retry")
+    @patch.object(ZebraZT411Adapter, "_snmp_get")
+    def test_reads_200_range_oids(self, mock_get: MagicMock, mock_retry: MagicMock) -> None:
+        """Poke / labels / print length are read from the '.200' range."""
+        mock_get.return_value = (b"ZT411", TAG_OCTET_STRING)
+        mock_retry.side_effect = [
+            (b"1", TAG_OCTET_STRING),
+            (b"1 INCHES, 1 CENTIMETERS", TAG_OCTET_STRING),
+        ]
+        self._make_adapter().get_counters()
+
+        mock_get.assert_called_with(OID_REACHABILITY, label="poke")
+        labels_call, meters_call = mock_retry.call_args_list
+        self.assertEqual(labels_call[0][0], OID_LABELS)
+        self.assertEqual(meters_call[0][0], OID_METERS)
 
     @patch.object(ZebraZT411Adapter, "_snmp_get")
     def test_unreachable_printer(self, mock_get: MagicMock) -> None:
@@ -92,7 +111,7 @@ class TestZebraZT411Adapter(unittest.TestCase):
         mock_get.return_value = (b"Zebra", TAG_OCTET_STRING)
         mock_retry.side_effect = [
             (None, None),  # labels timeout
-            (None, None),  # meters timeout
+            (None, None),  # print length timeout
         ]
         result = self._make_adapter().get_counters()
 

@@ -80,10 +80,24 @@ def convert_unit_map(raw: Any, mapping: dict[str, str], fallback: str = "unit_co
     return mapping.get(code, fallback.format(code))
 
 
+def _to_int(value: Any) -> int:
+    """int() that tolerates Link-OS STRING counters like b'302318 '."""
+    if isinstance(value, (bytes, str)):
+        return int(_to_str(value).strip())
+    return int(value)
+
+
+def _to_float(value: Any) -> float:
+    """float() that tolerates STRING counters like b'2277.5 '."""
+    if isinstance(value, (bytes, str)):
+        return float(_to_str(value).strip())
+    return float(value)
+
+
 _CONVERTERS: dict[None | str, Callable[[Any], Any]] = {
     None: lambda value: value,
-    "int": lambda value: int(value),
-    "float": lambda value: float(value),
+    "int": _to_int,
+    "float": _to_float,
     "str": _to_str,
 }
 
