@@ -19,8 +19,10 @@ Add a `--schedule` command to LPM that sets up Windows Task Scheduler to run
   daily triggers (one per configured time). No task-per-time sprawl.
 - **`\LPM\` task folder**: Avoids requiring admin rights. Non-admin users can create
   tasks in their own scope.
-- **No admin prompt**: Try creation, if it fails with access denied, report the
-  error clearly. Don't silently elevate.
+- **Admin required, fail fast**: `--schedule` requires an elevated session —
+  S4U registration is denied from an unelevated (UAC-filtered) token — so the
+  handler errors out immediately when not elevated, before any other output.
+  (User decision 2026-09-23; supersedes "try creation, report access denied".)
 - **No Linux/cron**: This is a Windows .exe project. If Linux support ever comes,
   it's a separate concern.
 
@@ -210,7 +212,8 @@ When `weekdays_only` is false, omit the `<DaysOfWeek>` element (runs every day).
 ### Task security
 
 - **RunLevel**: Limited (no elevation — SNMP doesn't need admin)
-- **LogonType**: Interactive token (runs when user is logged in)
+- **LogonType**: S4U — run whether the user is logged on or not, passwordless
+  (InteractiveToken would only run while logged in; user decision 2026-09-23)
 - **No password stored**: Using `TASK_LOGON_INTERACTIVE_TOKEN` avoids password handling
 
 ---

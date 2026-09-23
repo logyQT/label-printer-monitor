@@ -25,6 +25,7 @@ VIProductVersion "1.0.0.0"
 VIAddVersionKey "ProductName" "lpm"
 VIAddVersionKey "FileVersion" "1.0.0"
 VIAddVersionKey "FileDescription" "Label Printer Monitor Installer"
+VIAddVersionKey "LegalCopyright" "logy"
 
 ; ---------------------------------------------------------------------------
 ; Interface

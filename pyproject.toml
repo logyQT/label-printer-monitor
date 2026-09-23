@@ -42,3 +42,8 @@ ignore_missing_imports = true
 # jsonschema ships no type stubs; validate.py boundaries stay `Any`.
 module = ["jsonschema.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pywin32 ships no stubs; the Task Scheduler COM boundaries stay `Any`.
+module = ["win32com.*", "pythoncom", "pywintypes"]
+ignore_missing_imports = true

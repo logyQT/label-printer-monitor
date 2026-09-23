@@ -9,12 +9,14 @@ Usage:
     python main.py --report --csv           # export CSV
     python main.py --validate               # check that everything is set up
     python main.py --validate --network     # also check SNMP reachability
+    python main.py --schedule               # manage the Windows scheduled task (frozen build only)
     python main.py                          # show this help message
 """
 
 import argparse
 import concurrent.futures
 import contextlib
+import ctypes
 import json
 import logging
 import os
@@ -39,10 +41,9 @@ from src.adapters import create_adapter  # noqa: E402
 from src.adapters.base import CounterResult, PrinterAdapter  # noqa: E402
 from src.env import (  # noqa: E402
     DATA_ROOT,
-    EMBEDDED_CONFIG_EXAMPLE,
-    EMBEDDED_SCHEMA,
     FROZEN,
     backups_dir,
+    bundled_config_dir,
     config_dir,
     data_dir,
     logs_dir,
@@ -75,6 +76,36 @@ def _config_path() -> str:
 def _schema_path() -> str:
     """Path to config.json.schema inside the config directory."""
     return os.path.join(config_dir(), "config.json.schema")
+
+
+def _refresh_schema_copy() -> bool:
+    """Copy the shipped schema over the config-dir one when missing or stale.
+
+    %APPDATA% keeps a copy written at first --init; without a refresh, schema
+    changes never reach existing installs and --validate fails with
+    "Additional properties are not allowed". Byte-compare so the copy is only
+    rewritten when it actually differs. No-op when both paths resolve to the
+    same file (dev mode) or the shipped file is unavailable.
+    """
+    src = os.path.join(bundled_config_dir(), "config.json.schema")
+    dst = _schema_path()
+    if os.path.abspath(src) == os.path.abspath(dst):
+        return False
+    try:
+        with open(src, "rb") as f:
+            source = f.read()
+    except OSError:
+        return False
+    try:
+        with open(dst, "rb") as f:
+            if f.read() == source:
+                return False
+    except OSError:
+        pass
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    with open(dst, "wb") as f:
+        f.write(source)
+    return True
 
 
 def _db_path(config: Config) -> str:
@@ -128,9 +159,7 @@ def _verify_db(db_path: str) -> None:
         try:
             result = conn.execute("PRAGMA integrity_check").fetchone()
             if result[0] != "ok":
-                raise SystemExit(
-                    f"ERROR: Database integrity check failed: {result[0]}"
-                )
+                raise SystemExit(f"ERROR: Database integrity check failed: {result[0]}")
         finally:
             conn.close()
     except sqlite3.DatabaseError as exc:
@@ -219,25 +248,27 @@ def _handle_init() -> None:
     # Ensure the config directory exists
     os.makedirs(c_dir, exist_ok=True)
 
-    if FROZEN:
-        # Frozen exe: write config.example.json + schema from baked-in strings
-        example_path = os.path.join(c_dir, "config.example.json")
-        with open(example_path, "w", encoding="utf-8") as f:
-            f.write(EMBEDDED_CONFIG_EXAMPLE)
-        schema_path = os.path.join(c_dir, "config.json.schema")
-        with open(schema_path, "w", encoding="utf-8") as f:
-            f.write(EMBEDDED_SCHEMA)
-        print(f"Wrote embedded config example to {example_path}")
-    else:
-        example_path = os.path.join(_HERE, "config", "config.example.json")
-        if not os.path.exists(example_path):
-            print(f"ERROR: Example config not found: {example_path}", file=sys.stderr)
-            sys.exit(2)
-        # Also copy schema into config_dir so validation can find it
-        src_schema = os.path.join(_HERE, "config", "config.json.schema")
-        dst_schema = os.path.join(c_dir, "config.json.schema")
-        if os.path.exists(src_schema) and not os.path.exists(dst_schema):
-            shutil.copy2(src_schema, dst_schema)
+    # The shipped config files are the single source of truth: repo config/
+    # in dev, the config/ folder vendored next to lpm.exe in builds
+    # (build.py --include-data-files). Copy them into place.
+    src_dir = bundled_config_dir()
+    src_example = os.path.join(src_dir, "config.example.json")
+    src_schema = os.path.join(src_dir, "config.json.schema")
+    if not (os.path.exists(src_example) and os.path.exists(src_schema)):
+        print(f"ERROR: Shipped config files not found in: {src_dir}", file=sys.stderr)
+        print(
+            "The installation looks incomplete - distribute the whole build folder (see build.py).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    example_path = os.path.join(c_dir, "config.example.json")
+    if os.path.abspath(src_example) != os.path.abspath(example_path):
+        shutil.copy2(src_example, example_path)
+        print(f"Wrote config example to {example_path}")
+
+    if _refresh_schema_copy():
+        print(f"Wrote schema to {_schema_path()}")
 
     shutil.copy2(example_path, target)
 
@@ -276,9 +307,7 @@ def _handle_init() -> None:
 # ── collect ──────────────────────────────────────────────────────────
 
 
-def collect_printer(
-    adapter: PrinterAdapter, printer_cfg: dict[str, Any]
-) -> CounterResult | None:
+def collect_printer(adapter: PrinterAdapter, printer_cfg: dict[str, Any]) -> CounterResult | None:
     try:
         counters = adapter.get_counters()
         if not counters.get("reachable"):
@@ -290,9 +319,7 @@ def collect_printer(
         return None
 
 
-def _collect_one(
-    printer_cfg: dict[str, Any], community: str, timeout: int, retries: int
-) -> CounterResult | None:
+def _collect_one(printer_cfg: dict[str, Any], community: str, timeout: int, retries: int) -> CounterResult | None:
     """Collect counters from a single printer (runs in a worker thread).
 
     Returns a counters dict, or None when the printer is unreachable or the
@@ -396,7 +423,15 @@ def _handle_validate(args: argparse.Namespace) -> None:
 
     config_path = _config_path()
 
+    # Replace a stale %APPDATA% schema copy before validating against it.
+    if _refresh_schema_copy():
+        print(f"Refreshed stale schema copy: {_schema_path()}")
+
     issues: list[Issue] = validate_setup(config_path, _project_root())
+
+    from src.schedule.validate import check_schedule
+
+    issues.extend(check_schedule(config_path, _project_root()))
 
     if args.network:
         with contextlib.suppress(SystemExit):
@@ -414,6 +449,59 @@ def _handle_validate(args: argparse.Namespace) -> None:
         print(f"\n{len(fails)} problem(s) found. Fix them, then re-run validation.")
         sys.exit(1)
     print("\nSetup looks good.")
+
+
+# ── schedule ─────────────────────────────────────────────────────────
+
+
+def _is_admin() -> bool:
+    """True when the process runs with full (UAC-elevated) admin rights."""
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _handle_schedule(args: argparse.Namespace) -> None:
+    """Create, update, or remove the Windows scheduled collection task."""
+    # Fail fast before any other gate or message: S4U registration is
+    # denied outright from an unelevated (UAC-filtered) admin token.
+    # (S4U/admin internals stay in this comment - end users just need the ask.)
+    if not _is_admin():
+        print("ERROR: --schedule requires an elevated session (Run as administrator).", file=sys.stderr)
+        sys.exit(1)
+
+    from src.schedule import install, remove
+
+    if not FROZEN:
+        print("ERROR: --schedule requires a built version (lpm.exe).", file=sys.stderr)
+        print("Build with build.py first, then ensure lpm is on PATH.", file=sys.stderr)
+        sys.exit(1)
+
+    if shutil.which("lpm") is None:
+        print("ERROR: 'lpm' not found on PATH.", file=sys.stderr)
+        print("Add the directory containing lpm.exe to your PATH.", file=sys.stderr)
+        sys.exit(1)
+
+    config = load_config()
+    if "schedule" not in config:
+        print("ERROR: No 'schedule' section in config.json.", file=sys.stderr)
+        print("Add a schedule section, e.g.:", file=sys.stderr)
+        print(
+            '  "schedule": { "enabled": true, "times": ["05:00", "15:00"], "weekdays_only": true }',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if args.remove:
+        remove()
+        return
+
+    if config["schedule"].get("enabled") is False:
+        print("Schedule is disabled in config.")
+        return
+
+    install(config)
 
 
 # ── report ───────────────────────────────────────────────────────────
@@ -447,22 +535,17 @@ def main() -> None:
     )
 
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument(
-        "--init", action="store_true", help="Create config from the example"
-    )
+    mode.add_argument("--init", action="store_true", help="Create config from the example")
     mode.add_argument("--collect", action="store_true", help="Collect statistics from all printers")
     mode.add_argument("--report", action="store_true", help="Generate a weekly statistics report")
-    mode.add_argument(
-        "--validate", action="store_true", help="Check that the project is set up correctly"
-    )
+    mode.add_argument("--validate", action="store_true", help="Check that the project is set up correctly")
+    mode.add_argument("--schedule", action="store_true", help="Create or update the scheduled collection task")
 
     # Collect-specific flags
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose output (--collect: SNMP debug, --validate: include OKs)"
     )
-    parser.add_argument(
-        "--dry", action="store_true", help="(collect) Dry run: collect but don't save to database"
-    )
+    parser.add_argument("--dry", action="store_true", help="(collect) Dry run: collect but don't save to database")
 
     # Report-specific flags
     parser.add_argument("--from", dest="from_date", help="(report) Start date (YYYY-MM-DD)")
@@ -476,6 +559,9 @@ def main() -> None:
         help="(validate) Also check live SNMP reachability of each printer",
     )
 
+    # Schedule-specific flags
+    parser.add_argument("--remove", action="store_true", help="(schedule) Remove scheduled task")
+
     args = parser.parse_args()
 
     if args.init:
@@ -486,6 +572,8 @@ def main() -> None:
         _handle_report(args)
     elif args.validate:
         _handle_validate(args)
+    elif args.schedule:
+        _handle_schedule(args)
     else:
         parser.print_help()
 

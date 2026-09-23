@@ -74,6 +74,32 @@
         }
       }
     },
+    "schedule": {
+      "type": "object",
+      "description": "Windows Task Scheduler settings",
+      "required": ["enabled", "times"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable scheduled collection"
+        },
+        "times": {
+          "type": "array",
+          "description": "Collection times in HH:MM format (24h)",
+          "items": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "minItems": 1
+        },
+        "weekdays_only": {
+          "type": "boolean",
+          "description": "Only run Monday-Friday (default: true)",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
     "printers": {
       "type": "array",
       "description": "List of printers to monitor",
