@@ -1,4 +1,4 @@
-"""Windows Task Scheduler COM calls (create, query, delete) for --schedule.
+"""Windows Task Scheduler COM calls (create, query, delete) for the schedule command.
 
 All win32com usage lives here. win32com is imported lazily - inside
 ``connect()`` and behind the module-level ``__getattr__`` - so importing
@@ -8,7 +8,7 @@ this module never requires pywin32 until a COM call actually runs.
 from contextlib import suppress
 from typing import Any
 
-from src.schedule.meta import TASK_FOLDER, TASK_NAME
+from src.schedule.meta import TASK_FOLDER, TASK_NAME, TASK_PATH
 
 # TASK_LOGON_S4U: "run whether user is logged on or not" without storing a
 # password (InteractiveToken would only run while the user is logged in).
@@ -83,7 +83,7 @@ def build_task_xml(times: list[str], weekdays_only: bool) -> str:
         '  <Actions Context="Author">\n'
         "    <Exec>\n"
         "      <Command>lpm</Command>\n"
-        "      <Arguments>--collect</Arguments>\n"
+        "      <Arguments>collect</Arguments>\n"
         "    </Exec>\n"
         "  </Actions>\n"
         "</Task>"
@@ -136,19 +136,28 @@ def register_task(scheduler: Any, xml: str) -> None:
         folder.RegisterTask(TASK_NAME, xml, 0, None, None, 2)
 
 
-def delete_task(scheduler: Any) -> bool:
+def delete_task(scheduler: Any, verbose: bool = False) -> bool:
     r"""Delete \LPM\LPM_Collect (and \LPM when it ends up empty).
 
     Returns True when the task existed and was deleted, False otherwise.
+    With *verbose*, narrate the folder cleanup decision.
     """
     try:
         folder = scheduler.GetFolder(TASK_FOLDER)
     except Exception:
+        if verbose:
+            print(f"{TASK_FOLDER}: task folder not found")
         return False
     folder.DeleteTask(TASK_NAME, 0)
+    if verbose:
+        print(f"{TASK_PATH}: deleted")
     if len(folder.GetTasks(0)) == 0:
         # Remove the folder too, but not at the cost of failing a successful
         # task deletion (it may still hold subfolders or a concurrent task).
+        if verbose:
+            print(f"{TASK_FOLDER}: no tasks left -> deleting folder")
         with suppress(Exception):
             scheduler.GetFolder("\\").DeleteFolder("LPM", 0)
+    elif verbose:
+        print(f"{TASK_FOLDER}: {len(folder.GetTasks(0))} other task(s) -> keeping folder")
     return True

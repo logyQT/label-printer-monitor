@@ -1,15 +1,16 @@
 """Printer statistics collection & reporting entry point.
 
-Usage:
-    python main.py --init                   # create config from the example
-    python main.py --collect                # collect from all printers
-    python main.py --collect --verbose      # with SNMP debug output
-    python main.py --report                 # weekly report (current week)
-    python main.py --report --from 2026-09-01 --to 2026-09-30
-    python main.py --report --csv           # export CSV
-    python main.py --validate               # check that everything is set up
-    python main.py --validate --network     # also check SNMP reachability
-    python main.py --schedule               # manage the Windows scheduled task (frozen build only)
+Usage (replace ``python main.py`` with ``lpm`` in a frozen build):
+    python main.py init                     # create config from the example
+    python main.py collect                  # collect from all printers
+    python main.py collect -v               # with SNMP debug output
+    python main.py report                   # weekly report (current week)
+    python main.py report --from 2026-09-01 --to 2026-09-30
+    python main.py report --csv             # export CSV
+    python main.py validate                 # check that everything is set up
+    python main.py validate --network       # also check SNMP reachability
+    python main.py schedule                 # manage the Windows scheduled task (frozen build only)
+    python main.py schedule -r -v           # remove it, narrating each stage
     python main.py                          # show this help message
 """
 
@@ -81,8 +82,8 @@ def _schema_path() -> str:
 def _refresh_schema_copy() -> bool:
     """Copy the shipped schema over the config-dir one when missing or stale.
 
-    %APPDATA% keeps a copy written at first --init; without a refresh, schema
-    changes never reach existing installs and --validate fails with
+    %APPDATA% keeps a copy written at first `init`; without a refresh, schema
+    changes never reach existing installs and `validate` fails with
     "Additional properties are not allowed". Byte-compare so the copy is only
     rewritten when it actually differs. No-op when both paths resolve to the
     same file (dev mode) or the shipped file is unavailable.
@@ -233,8 +234,9 @@ def setup_logging(log_dir: str, verbose: bool = False) -> str:
 # ── init ──────────────────────────────────────────────────────────────
 
 
-def _handle_init() -> None:
+def _handle_init(args: argparse.Namespace) -> None:
     """Bootstrap the project: create config from the example + runtime dirs."""
+    del args  # no init-specific flags (signature shared with the other handlers)
     from src.validate import find_schema_violation, resolve_schema_path
 
     c_dir = config_dir()
@@ -296,12 +298,12 @@ def _handle_init() -> None:
 
     if FROZEN:
         print(f"\nEdit {target} with your printers, then run:")
-        print("  lpm --validate  # check everything is set up")
-        print("  lpm --collect")
+        print("  lpm validate  # check everything is set up")
+        print("  lpm collect")
     else:
         print("\nEdit config/config.json with your printers, then run:")
-        print("  python main.py --validate  # check everything is set up")
-        print("  python main.py --collect")
+        print("  python main.py validate  # check everything is set up")
+        print("  python main.py collect")
 
 
 # ── collect ──────────────────────────────────────────────────────────
@@ -437,7 +439,7 @@ def _handle_validate(args: argparse.Namespace) -> None:
         with contextlib.suppress(SystemExit):
             issues += validate_network(load_config())
 
-    # Without --verbose, only show warnings and errors.
+    # Without -v/--verbose, only show warnings and errors.
     if not args.verbose:
         issues = [i for i in issues if i.level != "OK"]
 
@@ -464,24 +466,31 @@ def _is_admin() -> bool:
 
 def _handle_schedule(args: argparse.Namespace) -> None:
     """Create, update, or remove the Windows scheduled collection task."""
+    verbose: bool = args.verbose
     # Fail fast before any other gate or message: S4U registration is
     # denied outright from an unelevated (UAC-filtered) admin token.
     # (S4U/admin internals stay in this comment - end users just need the ask.)
     if not _is_admin():
-        print("ERROR: --schedule requires an elevated session (Run as administrator).", file=sys.stderr)
+        print("ERROR: lpm schedule requires an elevated session (Run as administrator).", file=sys.stderr)
         sys.exit(1)
+    if verbose:
+        print("Elevated session: ok")
 
     from src.schedule import install, remove
 
     if not FROZEN:
-        print("ERROR: --schedule requires a built version (lpm.exe).", file=sys.stderr)
+        print("ERROR: lpm schedule requires a built version (lpm.exe).", file=sys.stderr)
         print("Build with build.py first, then ensure lpm is on PATH.", file=sys.stderr)
         sys.exit(1)
 
-    if shutil.which("lpm") is None:
+    lpm_path = shutil.which("lpm")
+    if lpm_path is None:
         print("ERROR: 'lpm' not found on PATH.", file=sys.stderr)
         print("Add the directory containing lpm.exe to your PATH.", file=sys.stderr)
         sys.exit(1)
+    if verbose:
+        print(f"Running from: {sys.executable}")
+        print(f"'lpm' resolved on PATH: {lpm_path}")
 
     config = load_config()
     if "schedule" not in config:
@@ -494,14 +503,14 @@ def _handle_schedule(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     if args.remove:
-        remove()
+        remove(verbose=verbose)
         return
 
     if config["schedule"].get("enabled") is False:
         print("Schedule is disabled in config.")
         return
 
-    install(config)
+    install(config, verbose=verbose)
 
 
 # ── report ───────────────────────────────────────────────────────────
@@ -533,49 +542,39 @@ def main() -> None:
         description="Printer statistics - collect & report",
         epilog="Run with no flags to see this help message.",
     )
+    sub = parser.add_subparsers(dest="command", metavar="<command>")
 
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--init", action="store_true", help="Create config from the example")
-    mode.add_argument("--collect", action="store_true", help="Collect statistics from all printers")
-    mode.add_argument("--report", action="store_true", help="Generate a weekly statistics report")
-    mode.add_argument("--validate", action="store_true", help="Check that the project is set up correctly")
-    mode.add_argument("--schedule", action="store_true", help="Create or update the scheduled collection task")
+    p_init = sub.add_parser("init", help="Create config from the example")
+    p_init.set_defaults(func=_handle_init)
 
-    # Collect-specific flags
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Verbose output (--collect: SNMP debug, --validate: include OKs)"
-    )
-    parser.add_argument("--dry", action="store_true", help="(collect) Dry run: collect but don't save to database")
+    p_collect = sub.add_parser("collect", help="Collect statistics from all printers")
+    p_collect.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    p_collect.add_argument("--dry", action="store_true", help="Dry run: collect but don't save to database")
+    p_collect.set_defaults(func=_handle_collect)
 
-    # Report-specific flags
-    parser.add_argument("--from", dest="from_date", help="(report) Start date (YYYY-MM-DD)")
-    parser.add_argument("--to", dest="to_date", help="(report) End date (YYYY-MM-DD)")
-    parser.add_argument("--csv", action="store_true", help="(report) Export report as CSV")
+    p_validate = sub.add_parser("validate", help="Check that the project is set up correctly")
+    p_validate.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    p_validate.add_argument("--network", action="store_true", help="Also check live SNMP reachability of each printer")
+    p_validate.set_defaults(func=_handle_validate)
 
-    # Validate-specific flags
-    parser.add_argument(
-        "--network",
-        action="store_true",
-        help="(validate) Also check live SNMP reachability of each printer",
-    )
+    p_report = sub.add_parser("report", help="Generate a weekly statistics report")
+    p_report.add_argument("--from", dest="from_date", help="Start date (YYYY-MM-DD)")
+    p_report.add_argument("--to", dest="to_date", help="End date (YYYY-MM-DD)")
+    p_report.add_argument("--csv", action="store_true", help="Export report as CSV")
+    p_report.set_defaults(func=_handle_report)
 
-    # Schedule-specific flags
-    parser.add_argument("--remove", action="store_true", help="(schedule) Remove scheduled task")
+    p_schedule = sub.add_parser("schedule", help="Create or update the scheduled collection task")
+    p_schedule.add_argument("-r", "--remove", action="store_true", help="Remove the scheduled task")
+    p_schedule.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    p_schedule.set_defaults(func=_handle_schedule)
 
     args = parser.parse_args()
 
-    if args.init:
-        _handle_init()
-    elif args.collect:
-        _handle_collect(args)
-    elif args.report:
-        _handle_report(args)
-    elif args.validate:
-        _handle_validate(args)
-    elif args.schedule:
-        _handle_schedule(args)
-    else:
+    handler = getattr(args, "func", None)
+    if handler is None:
         parser.print_help()
+    else:
+        handler(args)
 
 
 if __name__ == "__main__":

@@ -42,8 +42,8 @@ def build() -> None:
         # ── Vendored config assets ─────────────────────────────────────
         #    config/*.json in the repo is the single source of truth; these
         #    land in dist/main.dist/config/ next to lpm.exe, found at
-        #    runtime via env.bundled_config_dir() (--init copies them,
-        #    --validate refreshes a stale %APPDATA% copy).
+        #    runtime via env.bundled_config_dir() (init copies them,
+        #    validate refreshes a stale %APPDATA% copy).
         f"--include-data-files={SCHEMA_FILE}=config/config.json.schema",
         f"--include-data-files={EXAMPLE_FILE}=config/config.example.json",
         # Windows console app

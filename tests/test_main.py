@@ -1,11 +1,14 @@
 """Tests for main.py - entry point and executor.
 
 Tests cover:
+- Subcommand dispatch (lpm <command> [flags])
 - Config loading
 - Logging setup
 - Collection logic
 """
 
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -70,7 +73,6 @@ class TestCollectPrinter(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-
             "model_name": "Zebra ZT230",
             "reachable": True,
         }
@@ -84,7 +86,6 @@ class TestCollectPrinter(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": None,
             "meters_total": None,
-
             "model_name": "",
             "reachable": False,
         }
@@ -119,7 +120,6 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-
             "model_name": "Zebra ZT230",
             "reachable": True,
         }
@@ -135,7 +135,6 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": None,
             "meters_total": None,
-
             "model_name": "",
             "reachable": False,
         }
@@ -151,7 +150,6 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-
             "model_name": "Zebra ZT230",
             "reachable": True,
         }
@@ -183,7 +181,6 @@ class TestRunCollection(unittest.TestCase):
         adapter.get_counters.return_value = {
             "labels_total": 100,
             "meters_total": 50.0,
-
             "model_name": "Zebra ZT230",
             "reachable": True,
         }
@@ -196,6 +193,78 @@ class TestRunCollection(unittest.TestCase):
 
         self.assertEqual(captured.get("max_workers"), 5)
         self.assertEqual((success, fail, total), (1, 0, 1))
+
+
+class TestSubcommandDispatch(unittest.TestCase):
+    """lpm <command> [flags] - subparser routing and flag ownership."""
+
+    def test_bare_invocation_prints_help(self) -> None:
+        out = io.StringIO()
+        with patch("sys.argv", ["lpm"]), contextlib.redirect_stdout(out):
+            main.main()  # no SystemExit: prints help and returns (exit 0)
+        text = out.getvalue()
+        self.assertIn("usage:", text)
+        self.assertIn("collect", text)
+        self.assertIn("schedule", text)
+
+    def test_every_subcommand_routes_to_its_handler(self) -> None:
+        cases = [
+            ("init", "_handle_init"),
+            ("collect", "_handle_collect"),
+            ("validate", "_handle_validate"),
+            ("report", "_handle_report"),
+            ("schedule", "_handle_schedule"),
+        ]
+        for command, handler_name in cases:
+            with (
+                self.subTest(command=command),
+                patch("sys.argv", ["lpm", command]),
+                patch(f"main.{handler_name}") as handler,
+            ):
+                main.main()
+            handler.assert_called_once()
+
+    def test_collect_flags_parsed(self) -> None:
+        with (
+            patch("sys.argv", ["lpm", "collect", "-v", "--dry"]),
+            patch("main._handle_collect") as handler,
+        ):
+            main.main()
+        namespace = handler.call_args.args[0]
+        self.assertTrue(namespace.verbose)
+        self.assertTrue(namespace.dry)
+
+    def test_schedule_remove_and_verbose_flags(self) -> None:
+        with (
+            patch("sys.argv", ["lpm", "schedule", "-r", "-v"]),
+            patch("main._handle_schedule") as handler,
+        ):
+            main.main()
+        namespace = handler.call_args.args[0]
+        self.assertTrue(namespace.remove)
+        self.assertTrue(namespace.verbose)
+
+    def test_report_rejects_verbose(self) -> None:
+        """-v belongs to collect/validate/schedule only - report errors out."""
+        err = io.StringIO()
+        with (
+            patch("sys.argv", ["lpm", "report", "-v"]),
+            contextlib.redirect_stderr(err),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            main.main()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("unrecognized arguments", err.getvalue())
+
+    def test_flag_before_subcommand_rejected(self) -> None:
+        """Flags must follow the subcommand: `lpm -v collect` is an error."""
+        with (
+            patch("sys.argv", ["lpm", "-v", "collect"]),
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            main.main()
+        self.assertEqual(ctx.exception.code, 2)
 
 
 if __name__ == "__main__":

@@ -120,7 +120,7 @@ Section "Install"
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm" \
         "EstimatedSize" "$0"
 
-    MessageBox MB_ICONINFORMATION "Installation complete.$\r$\n$\r$\nOpen a terminal and run: lpm --init"
+    MessageBox MB_ICONINFORMATION "Installation complete.$\r$\n$\r$\nOpen a terminal and run: lpm init"
 SectionEnd
 
 ; ---------------------------------------------------------------------------

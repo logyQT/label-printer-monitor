@@ -32,7 +32,7 @@ FAIL: str = "FAIL"
 def _load_json(path: str, label: str) -> tuple[dict[str, Any] | None, Issue | None]:
     """Load a JSON file, returning (data, issue_or_None)."""
     if not os.path.exists(path):
-        return None, Issue(FAIL, f"{label} not found: {path} (run `python main.py --init`)")
+        return None, Issue(FAIL, f"{label} not found: {path} (run `python main.py init`)")
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f), None
@@ -138,9 +138,7 @@ def validate_setup(
         if os.path.isdir(d):
             issues.append(Issue(OK, f"Runtime directory exists: {name}/"))
         else:
-            issues.append(
-                Issue(WARN, f"Runtime directory missing: {name}/ (run `python main.py --init`)")
-            )
+            issues.append(Issue(WARN, f"Runtime directory missing: {name}/ (run `python main.py init`)"))
 
     # 6. Database initializes (implies data/ is writable)
     try:
@@ -166,22 +164,17 @@ def _summarize(issues: list[Issue]) -> list[Issue]:
     return sorted(issues, key=lambda i: order[i.level])
 
 
-def _network_check_one(
-    printer: dict[str, Any], community: str, timeout_sec: int, retries: int
-) -> Issue:
+def _network_check_one(printer: dict[str, Any], community: str, timeout_sec: int, retries: int) -> Issue:
     """Check SNMP reachability of one printer; returns an Issue (never raises)."""
     ip = printer["ip"]
     model = printer["model"]
     try:
-        adapter = get_adapter_class(model)(
-            ip=ip, community=community, timeout_sec=timeout_sec, retries=retries
-        )
+        adapter = get_adapter_class(model)(ip=ip, community=community, timeout_sec=timeout_sec, retries=retries)
         if adapter.is_reachable():
             return Issue(OK, f"SNMP reachable: {model} ({ip})")
         return Issue(
             WARN,
-            f"SNMP NOT reachable: {model} ({ip}) - "
-            f'check network, community "{community}", port 161',
+            f'SNMP NOT reachable: {model} ({ip}) - check network, community "{community}", port 161',
         )
     except Exception as e:
         return Issue(WARN, f"SNMP check failed for {model} ({ip}): {e}")

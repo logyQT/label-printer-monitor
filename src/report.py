@@ -1,6 +1,6 @@
 """Weekly printer statistics report.
 
-Library module — called via ``main.py --report``.
+Library module — called via ``main.py report``.
 """
 
 import csv
@@ -43,9 +43,7 @@ def _week_dates(label: str) -> tuple[str, str]:
     return monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
 
 
-def compute_weekly(
-    config: dict[str, Any], from_date: str, to_date: str, root: str | None = None
-) -> Weeks:
+def compute_weekly(config: dict[str, Any], from_date: str, to_date: str, root: str | None = None) -> Weeks:
     """Returns {week_label: [{ip, model, labels, meters}, ...]}"""
     from src.env import DATA_ROOT
 
@@ -69,8 +67,7 @@ def compute_weekly(
     for ip in ips:
         if ip not in model_map:
             row = conn.execute(
-                "SELECT model_name FROM snapshots"
-                " WHERE printer_ip = ? AND model_name IS NOT NULL LIMIT 1",
+                "SELECT model_name FROM snapshots WHERE printer_ip = ? AND model_name IS NOT NULL LIMIT 1",
                 (ip,),
             ).fetchone()
             if row:
@@ -93,19 +90,13 @@ def compute_weekly(
         for row in rows:
             ts, labels, meters = row[0], row[1], row[2]
             wk = _week_label(ts)
-            by_week.setdefault(
-                wk, {"first": (labels, meters), "last": (labels, meters)}
-            )
+            by_week.setdefault(wk, {"first": (labels, meters), "last": (labels, meters)})
             by_week[wk]["last"] = (labels, meters)
 
         for wk, data in by_week.items():
             first, last = data["first"], data["last"]
 
-            labels_d = (
-                (last[0] - first[0])
-                if first[0] is not None and last[0] is not None
-                else None
-            )
+            labels_d = (last[0] - first[0]) if first[0] is not None and last[0] is not None else None
             meters_d = (last[1] - first[1]) if first[1] is not None and last[1] is not None else None
 
             weeks.setdefault(wk, []).append(

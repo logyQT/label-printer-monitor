@@ -41,7 +41,7 @@ echo Development environment ready.
 echo   Active Python:
 "%VENV_DIR%\Scripts\python.exe" --version
 echo   Activate : .venv\Scripts\activate
-echo   Init app : python main.py --init
+echo   Init app : python main.py init
 echo   Tests    : pytest
 echo   Lint     : ruff check .   /   ruff format .
 echo   Typecheck: mypy

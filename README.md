@@ -7,7 +7,7 @@ SNMP print counter collection for Zebra and Sato label printers. SQLite storage.
 ```bash
 pip install -r requirements.txt          # runtime
 pip install -r requirements-dev.txt      # + linting, testing, building
-python main.py --init
+python main.py init
 ```
 
 Edit `config/config.json`:
@@ -26,19 +26,18 @@ Edit `config/config.json`:
 }
 ```
 
-All commands accept `--config <path>` for alternate configs.
-
 ## Usage
 
 ```bash
-python main.py --collect                    # collect from all printers
-python main.py --collect --verbose           # SNMP debug output
-python main.py --report                      # current week
-python main.py --report --from 2026-09-01 --to 2026-09-30
-python main.py --report --csv
-python main.py --validate                    # config + schema + DB checks
-python main.py --validate --network          # + ping printers over SNMP
-python main.py --test
+python main.py init                      # create config from the example
+python main.py collect                   # collect from all printers
+python main.py collect -v                # SNMP debug output
+python main.py report                    # current week
+python main.py report --from 2026-09-01 --to 2026-09-30
+python main.py report --csv
+python main.py validate                  # config + schema + DB checks
+python main.py validate --network        # + ping printers over SNMP
+python main.py schedule -v               # manage the Windows scheduled task
 ```
 
 Lint: `ruff check .` / `ruff format .` / `mypy`
@@ -68,9 +67,9 @@ Or build an installer: `makensis installer/lpm.nsi` (ships the full `main.dist/`
 Usage is identical, replace `python main.py` with `lpm`:
 
 ```bash
-lpm --collect
-lpm --report --csv
-lpm --validate --network
+lpm collect
+lpm report --csv
+lpm validate --network
 ```
 
 ## Scheduling
@@ -78,14 +77,14 @@ lpm --validate --network
 ### Linux (cron)
 
 ```
-0 5 * * 1-5  lpm --collect
-0 15 * * 1-5 lpm --collect
+0 5 * * 1-5  lpm collect
+0 15 * * 1-5 lpm collect
 ```
 
 ### Windows (Task Scheduler)
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "lpm" -Argument "--collect"
+$action = New-ScheduledTaskAction -Execute "lpm" -Argument "collect"
 $trigger1 = New-ScheduledTaskTrigger -Daily -At "05:00"
 $trigger2 = New-ScheduledTaskTrigger -Daily -At "15:00"
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
@@ -110,6 +109,7 @@ Copy any file in `src/adapters/`, declare OIDs and converters:
 
 ```python
 from adapters.base import PrinterAdapter, Metric
+
 
 class ZebraZD621Adapter(PrinterAdapter):
     model_prefixes = ("zebra zd621",)

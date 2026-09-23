@@ -24,7 +24,7 @@ echo "Installing dev dependencies ..."
 echo
 echo "Development environment ready."
 echo "  Activate : source .venv/bin/activate"
-echo "  Init app : python main.py --init"
+echo "  Init app : python main.py init"
 echo "  Tests    : pytest"
 echo "  Lint     : ruff check .   /   ruff format ."
 echo "  Typecheck: mypy"

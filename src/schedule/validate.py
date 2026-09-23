@@ -1,4 +1,4 @@
-r"""Schedule config validation and the Task Scheduler check for --validate.
+r"""Schedule config validation and the Task Scheduler check for the validate command.
 
 Implements the plan's Cases 1 & 2, plus a disabled guard:
 
@@ -25,7 +25,11 @@ _TRIGGER_TIME: re.Pattern[str] = re.compile(r"<StartBoundary>[^T]+T(\d\d:\d\d):"
 # What build_task_xml() writes for the principal; a task registered before the
 # S4U change has InteractiveToken here and must be re-registered.
 EXPECTED_LOGON_XML = f"<LogonType>{LOGON_TYPE}</LogonType>"
-_STRAY_TASK_MESSAGE = "Stray scheduled task found: \\LPM\\LPM_Collect. Run lpm --schedule --remove to clean it up."
+# What build_task_xml() writes as the task action; a task registered before the
+# subcommand change runs `lpm --collect`, which the new CLI rejects - it must
+# be re-registered (otherwise every scheduled run fails at argument parsing).
+EXPECTED_ARGS_XML = "<Arguments>collect</Arguments>"
+_STRAY_TASK_MESSAGE = "Stray scheduled task found: \\LPM\\LPM_Collect. Run lpm schedule --remove to clean it up."
 
 
 def validate_schedule_config(config: Config) -> list[str]:
@@ -59,7 +63,7 @@ def extract_task_triggers(task_xml: str) -> tuple[list[str], bool]:
 
 
 def _matches_config(task_xml: str, schedule: dict[str, Any]) -> bool:
-    """True when the task's triggers AND principal match the config."""
+    """True when the task's triggers, principal, AND action match the config."""
     task_times, task_weekdays = extract_task_triggers(task_xml)
 
     cfg_times = schedule.get("times")
@@ -69,11 +73,16 @@ def _matches_config(task_xml: str, schedule: dict[str, Any]) -> bool:
     if not isinstance(weekdays_only, bool):
         weekdays_only = True
 
-    return task_times == expected_times and task_weekdays == weekdays_only and EXPECTED_LOGON_XML in task_xml
+    return (
+        task_times == expected_times
+        and task_weekdays == weekdays_only
+        and EXPECTED_LOGON_XML in task_xml
+        and EXPECTED_ARGS_XML in task_xml
+    )
 
 
 def check_schedule(config_path: str, project_root: str) -> list[Issue]:
-    """Scheduled-task check for --validate (plan Cases 1 & 2).
+    """Scheduled-task check for the validate command (plan Cases 1 & 2).
 
     *project_root* is accepted for symmetry with validate_setup(); the
     config is read from *config_path*.
@@ -113,9 +122,9 @@ def check_schedule(config_path: str, project_root: str) -> list[Issue]:
 
     # Case 2: schedule section exists - the task must exist and match.
     if task_xml is None:
-        return [Issue(WARN, "No scheduled task found. Run lpm --schedule to create one.")]
+        return [Issue(WARN, "No scheduled task found. Run lpm schedule to create one.")]
     if shutil.which("lpm") is None:
         return [Issue(FAIL, "Scheduled task points to missing executable")]
     if _matches_config(task_xml, schedule_section):
         return [Issue(OK, "Scheduled task matches config")]
-    return [Issue(WARN, "Scheduled task differs from config. Run lpm --schedule to update.")]
+    return [Issue(WARN, "Scheduled task differs from config. Run lpm schedule to update.")]
