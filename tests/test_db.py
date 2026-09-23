@@ -34,17 +34,13 @@ class TestInitDb(unittest.TestCase):
 
     def test_creates_snapshots_table(self) -> None:
         conn = db.init_db(self.test_db)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='snapshots'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='snapshots'")
         self.assertIsNotNone(cursor.fetchone())
         conn.close()
 
     def test_creates_indexes(self) -> None:
         conn = db.init_db(self.test_db)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'")
         indexes = cursor.fetchall()
         self.assertGreater(len(indexes), 0)
         conn.close()
@@ -67,9 +63,7 @@ class TestSaveSnapshot(unittest.TestCase):
         db.close_db(self.conn)
 
     def test_insert_new_snapshot(self) -> None:
-        result = db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.5, "Zebra ZT230", timestamp="2026-09-17T10:00:00"
-        )
+        result = db.save_snapshot(self.conn, "10.0.0.1", 100, 50.5, "Zebra ZT230", timestamp="2026-09-17T10:00:00")
         self.assertTrue(result)
 
     def test_idempotent_insert(self) -> None:
@@ -79,27 +73,17 @@ class TestSaveSnapshot(unittest.TestCase):
         self.assertFalse(result)
 
     def test_different_timestamps_allowed(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.5, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
-        result = db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.5, "Zebra", timestamp="2026-09-17T10:00:00")
+        result = db.save_snapshot(self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00")
         self.assertTrue(result)
 
     def test_different_printers_allowed(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.5, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
-        result = db.save_snapshot(
-            self.conn, "10.0.0.2", 200, 100.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.5, "Zebra", timestamp="2026-09-17T10:00:00")
+        result = db.save_snapshot(self.conn, "10.0.0.2", 200, 100.0, "Zebra", timestamp="2026-09-17T10:00:00")
         self.assertTrue(result)
 
     def test_none_values_allowed(self) -> None:
-        result = db.save_snapshot(
-            self.conn, "10.0.0.1", None, None, "", timestamp="2026-09-17T10:00:00"
-        )
+        result = db.save_snapshot(self.conn, "10.0.0.1", None, None, "", timestamp="2026-09-17T10:00:00")
         self.assertTrue(result)
 
     def test_default_timestamp(self) -> None:
@@ -121,32 +105,22 @@ class TestGetLatestSnapshot(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_returns_latest(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00")
+        db.save_snapshot(self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00")
         result = db.get_latest_snapshot(self.conn, "10.0.0.1")
         assert result is not None
         self.assertEqual(result["labels_total"], 200)
         self.assertEqual(result["meters_total"], 100.0)
 
     def test_different_printer(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.2", 300, 150.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00")
+        db.save_snapshot(self.conn, "10.0.0.2", 300, 150.0, "Zebra", timestamp="2026-09-17T10:00:00")
         result = db.get_latest_snapshot(self.conn, "10.0.0.2")
         assert result is not None
         self.assertEqual(result["labels_total"], 300)
 
     def test_returns_dict(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00")
         result = db.get_latest_snapshot(self.conn, "10.0.0.1")
         assert result is not None
         self.assertIsInstance(result, dict)
@@ -167,20 +141,14 @@ class TestGetSnapshotAt(unittest.TestCase):
         db.close_db(self.conn)
 
     def test_exact_match(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00")
         result = db.get_snapshot_at(self.conn, "10.0.0.1", "2026-09-17T10:00:00")
         assert result is not None
         self.assertEqual(result["labels_total"], 100)
 
     def test_closest_before(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00")
+        db.save_snapshot(self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00")
         result = db.get_snapshot_at(self.conn, "10.0.0.1", "2026-09-17T10:03:00")
         assert result is not None
         self.assertEqual(result["labels_total"], 100)
@@ -200,12 +168,8 @@ class TestGetHistory(unittest.TestCase):
         db.close_db(self.conn)
 
     def test_returns_all_history(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00")
+        db.save_snapshot(self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00")
         result = db.get_history(self.conn, "10.0.0.1")
         self.assertEqual(len(result), 2)
 
@@ -215,7 +179,6 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             100,
             50.0,
-
             "Zebra",
             timestamp=int(datetime(2026, 9, 16, 10, 0, 0).timestamp()),
         )
@@ -224,7 +187,6 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             200,
             100.0,
-
             "Zebra",
             timestamp=int(datetime(2026, 9, 17, 10, 0, 0).timestamp()),
         )
@@ -237,7 +199,6 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             100,
             50.0,
-
             "Zebra",
             timestamp=int(datetime(2026, 9, 16, 10, 0, 0).timestamp()),
         )
@@ -246,7 +207,6 @@ class TestGetHistory(unittest.TestCase):
             "10.0.0.1",
             200,
             100.0,
-
             "Zebra",
             timestamp=int(datetime(2026, 9, 17, 10, 0, 0).timestamp()),
         )
@@ -258,12 +218,8 @@ class TestGetHistory(unittest.TestCase):
         self.assertEqual(len(result), 0)
 
     def test_chronological_order(self) -> None:
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00"
-        )
-        db.save_snapshot(
-            self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00"
-        )
+        db.save_snapshot(self.conn, "10.0.0.1", 200, 100.0, "Zebra", timestamp="2026-09-17T10:05:00")
+        db.save_snapshot(self.conn, "10.0.0.1", 100, 50.0, "Zebra", timestamp="2026-09-17T10:00:00")
         result = db.get_history(self.conn, "10.0.0.1")
         self.assertEqual(result[0]["labels_total"], 100)
         self.assertEqual(result[1]["labels_total"], 200)

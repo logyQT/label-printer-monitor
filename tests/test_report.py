@@ -39,14 +39,10 @@ def _make_config() -> dict[str, Any]:
     }
 
 
-def _seed_snapshots(
-    conn: Any, printer_ip: str, timestamps_labels_meters: list[tuple[Any, Any, Any]]
-) -> None:
+def _seed_snapshots(conn: Any, printer_ip: str, timestamps_labels_meters: list[tuple[Any, Any, Any]]) -> None:
     """Insert snapshot rows from a list of (epoch, labels, meters)."""
     for ts, labels, meters in timestamps_labels_meters:
-        db.save_snapshot(
-            conn, printer_ip, labels, meters, model_name="TestModel", timestamp=ts
-        )
+        db.save_snapshot(conn, printer_ip, labels, meters, model_name="TestModel", timestamp=ts)
 
 
 def _epoch_for_date(date_str: str, hour: int, minute: int = 0) -> int:
@@ -125,12 +121,8 @@ class TestComputeWeekly(unittest.TestCase):
         conn = db.init_db(":memory:")
 
         for ip in ("10.0.0.1", "10.0.0.2"):
-            db.save_snapshot(
-                conn, ip, 10, 1.0, "Model", timestamp=_epoch_for_date("2026-09-17", 8, 0)
-            )
-            db.save_snapshot(
-                conn, ip, 20, 2.0, "Model", timestamp=_epoch_for_date("2026-09-17", 10, 0)
-            )
+            db.save_snapshot(conn, ip, 10, 1.0, "Model", timestamp=_epoch_for_date("2026-09-17", 8, 0))
+            db.save_snapshot(conn, ip, 20, 2.0, "Model", timestamp=_epoch_for_date("2026-09-17", 10, 0))
 
         with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
             weeks = report.compute_weekly(config, "2026-09-17", "2026-09-17")
@@ -146,12 +138,8 @@ class TestComputeWeekly(unittest.TestCase):
         conn = db.init_db(":memory:")
 
         for day in ("2026-09-07", "2026-09-14"):
-            db.save_snapshot(
-                conn, "10.0.0.1", 50, 5.0, "Zebra ZT230", timestamp=_epoch_for_date(day, 8, 0)
-            )
-            db.save_snapshot(
-                conn, "10.0.0.1", 60, 6.0, "Zebra ZT230", timestamp=_epoch_for_date(day, 10, 0)
-            )
+            db.save_snapshot(conn, "10.0.0.1", 50, 5.0, "Zebra ZT230", timestamp=_epoch_for_date(day, 8, 0))
+            db.save_snapshot(conn, "10.0.0.1", 60, 6.0, "Zebra ZT230", timestamp=_epoch_for_date(day, 10, 0))
 
         with patch("src.report.db.init_db", return_value=conn), patch("src.report.db.close_db"):
             weeks = report.compute_weekly(config, "2026-09-07", "2026-09-14")
@@ -261,9 +249,7 @@ class TestExportCsv(unittest.TestCase):
             with open(csv_path, encoding="utf-8") as f:
                 reader = csv.reader(f)
                 headers = next(reader)
-                self.assertEqual(
-                    headers, ["Week", "IP", "Model", "Labels Delta", "Meters Delta (m)"]
-                )
+                self.assertEqual(headers, ["Week", "IP", "Model", "Labels Delta", "Meters Delta (m)"])
 
     def test_csv_row_count(self) -> None:
         config = _make_config()

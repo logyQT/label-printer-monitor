@@ -146,9 +146,7 @@ def main() -> None:
     version_group.add_argument("-v2c", action="store_const", dest="version", const=1, help="Use SNMPv2c (default)")
     parser.set_defaults(version=1)
     parser.add_argument("--community", default="public", help="SNMP community (default: public)")
-    parser.add_argument(
-        "--timeout", type=int, default=5, help="Timeout per OID in seconds (default: 5)"
-    )
+    parser.add_argument("--timeout", type=int, default=5, help="Timeout per OID in seconds (default: 5)")
     parser.add_argument("--retries", type=int, default=2, help="Retry count (default: 2)")
     parser.add_argument("--max", type=int, default=500, help="Max OIDs to walk (default: 500)")
     args = parser.parse_args()

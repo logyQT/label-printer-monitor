@@ -10,6 +10,7 @@ from collections.abc import Callable
 # Public helpers
 # ---------------------------------------------------------------------------
 
+
 def cm_to_m(value: float) -> float:
     """Centimeters → meters."""
     return value / 100.0
@@ -35,8 +36,8 @@ def ft_to_m(value: float) -> float:
 # ---------------------------------------------------------------------------
 
 _UNIT_TO_M: dict[str, Callable[[float], float]] = {
-    "m": lambda v: v,                    # already meters – passthrough
-    "linearMeters": lambda v: v,         # Sato alias for meters
+    "m": lambda v: v,  # already meters – passthrough
+    "linearMeters": lambda v: v,  # Sato alias for meters
     "cm": cm_to_m,
     "centimeters": cm_to_m,
     "mm": mm_to_m,

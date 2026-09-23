@@ -50,11 +50,6 @@ class SatoCL4NXPlusAdapter(PrinterAdapter):
         # Narrow the ``dict[str, object]`` result: the engine stores a float
         # for meters_total and a str for meter_unit, but only isinstance can
         # prove it to the type checker (and guards at runtime too).
-        if (
-            meters is not None
-            and isinstance(meters, (int, float))
-            and isinstance(raw_unit, str)
-            and raw_unit != "m"
-        ):
+        if meters is not None and isinstance(meters, (int, float)) and isinstance(raw_unit, str) and raw_unit != "m":
             result["meters_total"] = to_meters(meters, raw_unit)
         result["meter_unit"] = "m"

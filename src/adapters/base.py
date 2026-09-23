@@ -46,9 +46,7 @@ class CounterResult(TypedDict):
 # What a Metric.convert may be: a passthrough (None), a built-in converter
 # name, a converter tuple ('regex', PATTERN) / ('map', MAP[, FALLBACK]), or an
 # arbitrary callable. The values are runtime-validated in convert_value().
-type ConverterSpec = (
-    None | Literal["int", "float", "str"] | tuple[Any, ...] | Callable[[Any], Any]
-)
+type ConverterSpec = None | Literal["int", "float", "str"] | tuple[Any, ...] | Callable[[Any], Any]
 
 
 def _to_str(value: Any) -> str:
@@ -106,9 +104,7 @@ def convert_value(raw: Any, convert: ConverterSpec) -> Any:
         if kind == "regex":
             return convert_regex(raw, convert[1])
         if kind == "map":
-            return convert_unit_map(
-                raw, convert[1], convert[2] if len(convert) > 2 else "unit_code:{}"
-            )
+            return convert_unit_map(raw, convert[1], convert[2] if len(convert) > 2 else "unit_code:{}")
         raise ValueError(f"Unknown converter kind: {kind!r}")
     if callable(convert):
         return convert(raw)
@@ -259,9 +255,7 @@ class PrinterAdapter(ABC):  # noqa: B024
             log.debug(f"  SNMP FAIL {self.ip} {oid}  [{tag}]: {e}")
             return None, None
 
-    def _snmp_get_retry(
-        self, oid: str, label: str | None = None, attempts: int = 3
-    ) -> tuple[Any | None, int | None]:
+    def _snmp_get_retry(self, oid: str, label: str | None = None, attempts: int = 3) -> tuple[Any | None, int | None]:
         """SNMP GET with exponential backoff retry."""
         for attempt in range(attempts):
             value, type_tag = self._snmp_get(oid, label=label)

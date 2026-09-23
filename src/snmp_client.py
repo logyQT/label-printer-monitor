@@ -220,9 +220,7 @@ def get(
     last_error: SnmpTimeout | None = None
     for attempt in range(retries + 1):
         try:
-            return asyncio.run(
-                _async_get(ip, oid, community, timeout_sec, retries=0, port=port, version=version)
-            )
+            return asyncio.run(_async_get(ip, oid, community, timeout_sec, retries=0, port=port, version=version))
         except SnmpTimeout as e:
             last_error = e
             if attempt < retries:
@@ -246,9 +244,7 @@ def get_bulk(
     version: int = VERSION_2C,
 ) -> list[tuple[str, Any, int]]:
     """SNMP GETBULK. Returns list of (oid, value, type_tag)."""
-    return asyncio.run(
-        _async_get_bulk(ip, oid, community, max_repetitions, timeout_sec, retries, port, version)
-    )
+    return asyncio.run(_async_get_bulk(ip, oid, community, max_repetitions, timeout_sec, retries, port, version))
 
 
 # get_multiple kept for backward compat (delegates to individual gets)
