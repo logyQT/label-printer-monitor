@@ -1,6 +1,10 @@
 """Printer statistics collection & reporting entry point.
 
 Usage (replace ``python main.py`` with ``lpm`` in a frozen build):
+    python main.py                          # interactive shell: lpm > prompt
+    python main.py shell                    # same, as an explicit subcommand
+    python main.py help                     # full help: every command + its options
+    python main.py help report              # options for a single command
     python main.py init                     # create config from the example
     python main.py collect                  # collect from all printers
     python main.py collect -v               # with SNMP debug output
@@ -11,7 +15,10 @@ Usage (replace ``python main.py`` with ``lpm`` in a frozen build):
     python main.py validate --network       # also check SNMP reachability
     python main.py schedule                 # manage the Windows scheduled task (frozen build only)
     python main.py schedule -r -v           # remove it, narrating each stage
-    python main.py                          # show this help message
+
+Inside the shell, the same commands run at the ``lpm >`` prompt; ``help``
+lists all of them, ``exit`` (or Ctrl+D) leaves.  With non-interactive stdin
+(pipes, CI), bare ``lpm`` prints the full help instead of blocking on input.
 """
 
 import argparse
@@ -49,6 +56,7 @@ from src.env import (  # noqa: E402
     data_dir,
     logs_dir,
 )
+from src.shell import run_shell  # noqa: E402
 
 log: logging.Logger = logging.getLogger("printer_stats")
 
@@ -536,11 +544,19 @@ def _handle_report(args: argparse.Namespace) -> None:
 # ── entry point ──────────────────────────────────────────────────────
 
 
-def main() -> None:
+def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+    """Build the CLI parser.
+
+    Returns ``(parser, subparsers)``: the subparser registry keyed by command
+    name feeds ``print_full_help()`` so one call can render every command's
+    full options, not just the one-line summaries.  Shared by one-shot mode,
+    ``lpm help``, and the interactive shell so command definitions live in
+    exactly one place.
+    """
     parser = argparse.ArgumentParser(
         prog="lpm" if FROZEN else None,
         description="Printer statistics - collect & report",
-        epilog="Run with no flags to see this help message.",
+        epilog="Run with no flags to open the interactive shell; 'lpm help' lists all commands.",
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
@@ -568,13 +584,65 @@ def main() -> None:
     p_schedule.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     p_schedule.set_defaults(func=_handle_schedule)
 
+    p_help = sub.add_parser("help", help="Show full help for all commands (or one command)")
+    p_help.add_argument("topic", nargs="?", metavar="COMMAND", help="Show help for a single command")
+    p_help.set_defaults(func=_handle_help)
+
+    p_shell = sub.add_parser("shell", help="Start the interactive shell (same as bare 'lpm')")
+    p_shell.set_defaults(func=_handle_shell)
+
+    return parser, dict(sub.choices)
+
+
+def print_full_help(
+    parser: argparse.ArgumentParser,
+    subparsers: dict[str, argparse.ArgumentParser],
+) -> None:
+    """Print the top-level help followed by every command's full options.
+
+    The default argparse listing only shows one-line summaries; this renders
+    each subparser's usage and flags too, so a single `lpm help` (or bare
+    ``lpm`` on a pipe) shows everything at once.
+    """
+    parser.print_help()
+    print("\ncommand details:")
+    for sub in subparsers.values():
+        print()
+        sub.print_help()
+
+
+def _handle_help(args: argparse.Namespace) -> None:
+    """``lpm help`` - all commands, or ``lpm help <command>`` - one command."""
+    parser, subparsers = build_parser()
+    topic: str | None = args.topic
+    if topic is None:
+        print_full_help(parser, subparsers)
+    elif topic in subparsers:
+        subparsers[topic].print_help()
+    else:
+        print(f"Unknown command: {topic!r}", file=sys.stderr)
+        sys.exit(2)
+
+
+def _handle_shell(args: argparse.Namespace) -> None:
+    """``lpm shell`` - start the interactive shell (same as bare ``lpm``)."""
+    del args  # no shell-specific flags (signature shared with the other handlers)
+    run_shell(build_parser)
+
+
+def main() -> None:
+    parser, subparsers = build_parser()
     args = parser.parse_args()
 
     handler = getattr(args, "func", None)
-    if handler is None:
-        parser.print_help()
-    else:
+    if handler is not None:
         handler(args)
+    elif sys.stdin.isatty():
+        run_shell(build_parser)
+    else:
+        # Piped/redirected stdin (scripts, CI): print help instead of
+        # blocking forever on input().
+        print_full_help(parser, subparsers)
 
 
 if __name__ == "__main__":

@@ -29,16 +29,24 @@ Edit `config/config.json`:
 ## Usage
 
 ```bash
-python main.py init                      # create config from the example
-python main.py collect                   # collect from all printers
-python main.py collect -v                # SNMP debug output
-python main.py report                    # current week
+python main.py                          # interactive shell: lpm > prompt
+python main.py shell                    # same, as an explicit subcommand
+python main.py help                     # full help: every command + its options
+python main.py help report              # options for a single command
+python main.py init                     # create config from the example
+python main.py collect                  # collect from all printers
+python main.py collect -v               # SNMP debug output
+python main.py report                   # current week
 python main.py report --from 2026-09-01 --to 2026-09-30
 python main.py report --csv
-python main.py validate                  # config + schema + DB checks
-python main.py validate --network        # + ping printers over SNMP
-python main.py schedule -v               # manage the Windows scheduled task
+python main.py validate                 # config + schema + DB checks
+python main.py validate --network       # + ping printers over SNMP
+python main.py schedule -v              # manage the Windows scheduled task
 ```
+
+Running with no arguments drops you into the interactive shell, where the same
+commands run at the `lpm > ` prompt (`help` lists them all, `exit` or Ctrl+D
+leaves). With piped/redirected stdin, bare `lpm` prints the full help instead.
 
 Lint: `ruff check .` / `ruff format .` / `mypy`
 
@@ -67,6 +75,8 @@ Or build an installer: `makensis installer/lpm.nsi` (ships the full `main.dist/`
 Usage is identical, replace `python main.py` with `lpm`:
 
 ```bash
+lpm                        # interactive shell (lpm > prompt)
+lpm help                   # full help: every command + its options
 lpm collect
 lpm report --csv
 lpm validate --network
@@ -152,6 +162,7 @@ src/
   converters.py         # unit conversion (cm/in/ft/mm -> meters)
   db.py                 # SQLite storage
   report.py             # weekly report generator
+  shell.py              # interactive `lpm >` shell (REPL)
   snmp_client.py        # pysnmp wrapper
   validate.py           # setup validation
 build.py                # Nuitka build script

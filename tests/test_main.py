@@ -198,14 +198,66 @@ class TestRunCollection(unittest.TestCase):
 class TestSubcommandDispatch(unittest.TestCase):
     """lpm <command> [flags] - subparser routing and flag ownership."""
 
-    def test_bare_invocation_prints_help(self) -> None:
+    def test_bare_invocation_without_tty_prints_full_help(self) -> None:
+        """Piped/redirected stdin gets help (never blocks on input())."""
         out = io.StringIO()
-        with patch("sys.argv", ["lpm"]), contextlib.redirect_stdout(out):
+        with (
+            patch("sys.argv", ["lpm"]),
+            patch("sys.stdin") as stdin,
+            patch("main.run_shell") as shell,
+            contextlib.redirect_stdout(out),
+        ):
+            stdin.isatty.return_value = False
             main.main()  # no SystemExit: prints help and returns (exit 0)
+        shell.assert_not_called()
         text = out.getvalue()
         self.assertIn("usage:", text)
         self.assertIn("collect", text)
         self.assertIn("schedule", text)
+        # full help includes each command's flags, not just the summaries
+        self.assertIn("--network", text)
+        self.assertIn("--csv", text)
+
+    def test_bare_invocation_on_tty_starts_shell(self) -> None:
+        with patch("sys.argv", ["lpm"]), patch("sys.stdin") as stdin, patch("main.run_shell") as shell:
+            stdin.isatty.return_value = True
+            main.main()
+        shell.assert_called_once_with(main.build_parser)
+
+    def test_shell_subcommand_starts_shell(self) -> None:
+        with patch("sys.argv", ["lpm", "shell"]), patch("main.run_shell") as shell:
+            main.main()
+        shell.assert_called_once_with(main.build_parser)
+
+    def test_help_prints_full_help(self) -> None:
+        out = io.StringIO()
+        with patch("sys.argv", ["lpm", "help"]), contextlib.redirect_stdout(out):
+            main.main()  # no SystemExit: help returns (exit 0)
+        text = out.getvalue()
+        self.assertIn("usage:", text)
+        self.assertIn("command details:", text)
+        self.assertIn("--network", text)
+        self.assertIn("--csv", text)
+
+    def test_help_topic_prints_single_command_help(self) -> None:
+        out = io.StringIO()
+        with patch("sys.argv", ["lpm", "help", "report"]), contextlib.redirect_stdout(out):
+            main.main()
+        text = out.getvalue()
+        self.assertIn("--from", text)
+        self.assertIn("--csv", text)
+        self.assertNotIn("--network", text)
+
+    def test_help_unknown_topic_exits_2(self) -> None:
+        err = io.StringIO()
+        with (
+            patch("sys.argv", ["lpm", "help", "frobnicate"]),
+            contextlib.redirect_stderr(err),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            main.main()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("frobnicate", err.getvalue())
 
     def test_every_subcommand_routes_to_its_handler(self) -> None:
         cases = [
@@ -214,6 +266,8 @@ class TestSubcommandDispatch(unittest.TestCase):
             ("validate", "_handle_validate"),
             ("report", "_handle_report"),
             ("schedule", "_handle_schedule"),
+            ("help", "_handle_help"),
+            ("shell", "_handle_shell"),
         ]
         for command, handler_name in cases:
             with (
