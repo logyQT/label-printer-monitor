@@ -31,7 +31,7 @@ import os
 import shutil
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 # When running from source, put the project root on sys.path so that
@@ -72,7 +72,7 @@ def _project_root() -> str:
 
     In dev mode this is the repo root (same as _HERE).
     In frozen/exe mode this is %APPDATA%\com.logy.lpm.
-    All config-relative paths (log_dir, db filename, etc.) resolve
+    All config-relative paths (logs.dir, db filename, etc.) resolve
     against this.
     """
     return DATA_ROOT  # type: ignore[no-any-return]  # env.DATA_ROOT is lazy (module __getattr__ -> Any)
@@ -159,6 +159,30 @@ def _prune_backups(keep: int) -> None:
     for entry in entries[:excess]:
         shutil.rmtree(entry.path)
         log.debug("Pruned old backup: %s", entry.name)
+
+
+def _prune_logs(log_dir: str, retention_days: int) -> None:
+    """Remove run log files older than *retention_days* days.
+
+    Only files matching the ``run_YYYYMMDD_HHMMSS.log`` naming scheme are
+    considered; the embedded timestamp gives the age without relying on
+    mtime.  Anything else in the log directory is left untouched.
+    ``retention_days`` of 0 (or less) disables pruning.
+    """
+    if retention_days <= 0 or not os.path.isdir(log_dir):
+        return
+    cutoff = datetime.now() - timedelta(days=retention_days)
+    for entry in os.scandir(log_dir):
+        name = entry.name
+        if not (entry.is_file() and name.startswith("run_") and name.endswith(".log")):
+            continue
+        try:
+            created = datetime.strptime(name[4:-4], "%Y%m%d_%H%M%S")
+        except ValueError:
+            continue  # not our naming scheme - never delete it
+        if created < cutoff:
+            os.remove(entry.path)
+            log.debug("Pruned old log: %s", name)
 
 
 def _verify_db(db_path: str) -> None:
@@ -417,9 +441,13 @@ def _handle_collect(args: argparse.Namespace) -> None:
     config = load_config()
     if not args.dry:
         backup_data(config=config)
-    log_dir = os.path.join(_project_root(), config.get("log_dir", "logs"))
+    log_dir = os.path.join(_project_root(), config.get("logs", {}).get("dir", "logs"))
     log_file = setup_logging(log_dir, verbose=args.verbose)
     log.info(f"Log file: {log_file}")
+    # Age out old run logs (after setup_logging so prunes are recorded here;
+    # the current file is new and never matches the cutoff).
+    retention_days = config.get("logs", {}).get("retention_days", 30)
+    _prune_logs(log_dir, retention_days)
     if args.dry:
         log.info("DRY RUN - collecting but not saving to database")
     run_collection(config, dry=args.dry)

@@ -12,6 +12,7 @@ import io
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -65,6 +66,48 @@ class TestSetupLogging(unittest.TestCase):
             self._close_logging_handlers()
 
 
+class TestPruneLogs(unittest.TestCase):
+    """Tests for _prune_logs()."""
+
+    def _make_log(self, directory: str, ts: str) -> str:
+        path = os.path.join(directory, f"run_{ts}.log")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("log line\n")
+        return path
+
+    def test_removes_old_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old = self._make_log(tmpdir, (datetime.now() - timedelta(days=40)).strftime("%Y%m%d_%H%M%S"))
+            recent = self._make_log(tmpdir, (datetime.now() - timedelta(days=5)).strftime("%Y%m%d_%H%M%S"))
+            main._prune_logs(tmpdir, 30)
+            self.assertFalse(os.path.exists(old))
+            self.assertTrue(os.path.exists(recent))
+
+    def test_zero_disables_pruning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old = self._make_log(tmpdir, (datetime.now() - timedelta(days=400)).strftime("%Y%m%d_%H%M%S"))
+            main._prune_logs(tmpdir, 0)
+            self.assertTrue(os.path.exists(old))
+
+    def test_skips_non_matching_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            foreign = os.path.join(tmpdir, "other.txt")
+            with open(foreign, "w", encoding="utf-8") as f:
+                f.write("keep me\n")
+            malformed = os.path.join(tmpdir, "run_not-a-date.log")
+            with open(malformed, "w", encoding="utf-8") as f:
+                f.write("keep me too\n")
+            ancient = self._make_log(tmpdir, (datetime.now() - timedelta(days=400)).strftime("%Y%m%d_%H%M%S"))
+            main._prune_logs(tmpdir, 30)
+            self.assertTrue(os.path.exists(foreign))
+            self.assertTrue(os.path.exists(malformed))
+            self.assertFalse(os.path.exists(ancient))
+
+    def test_missing_directory_is_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            main._prune_logs(os.path.join(tmpdir, "nope"), 30)  # must not raise
+
+
 class TestCollectPrinter(unittest.TestCase):
     """Tests for collect_printer()."""
 
@@ -107,7 +150,7 @@ class TestRunCollection(unittest.TestCase):
     def setUp(self) -> None:
         self.config = {
             "db": {"filename": ":memory:"},
-            "log_dir": tempfile.mkdtemp(),
+            "logs": {"dir": tempfile.mkdtemp()},
             "snmp": {"community": "public", "timeout_sec": 1, "retries": 0},
             "printers": [
                 {"ip": "10.0.0.1", "model": "Zebra ZT230", "location": "Line 1"},

@@ -3,7 +3,7 @@
   "title": "Printer Statistics Configuration",
   "description": "Configuration for the printer statistics collection system",
   "type": "object",
-  "required": ["db", "log_dir", "snmp", "printers"],
+  "required": ["db", "logs", "snmp", "printers"],
   "properties": {
     "$schema": {
       "type": "string",
@@ -20,9 +20,23 @@
         }
       }
     },
-    "log_dir": {
-      "type": "string",
-      "description": "Directory for log files"
+    "logs": {
+      "type": "object",
+      "description": "Log file location and retention settings",
+      "required": ["dir"],
+      "properties": {
+        "dir": {
+          "type": "string",
+          "description": "Directory for log files (relative to the project root)"
+        },
+        "retention_days": {
+          "type": "integer",
+          "description": "Delete run log files older than this many days. 0 disables pruning.",
+          "minimum": 0,
+          "default": 30
+        }
+      },
+      "additionalProperties": false
     },
     "snmp": {
       "type": "object",

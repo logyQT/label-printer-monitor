@@ -620,7 +620,7 @@ class TestSchemaGuard(unittest.TestCase):
 
         config = {
             "db": {"filename": "printer_stats.db"},
-            "log_dir": "logs",
+            "logs": {"dir": "logs"},
             "snmp": {"community": "public", "timeout_sec": 3, "retries": 2},
             "printers": [{"ip": "10.0.1.10", "model": "Zebra ZT411", "location": "Line 1"}],
             "schedule": dict(VALID_SCHEDULE),

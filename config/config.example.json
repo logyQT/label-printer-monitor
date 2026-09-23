@@ -3,7 +3,10 @@
   "db": {
     "filename": "printer_stats.db"
   },
-  "log_dir": "logs",
+  "logs": {
+    "dir": "logs",
+    "retention_days": 30
+  },
   "snmp": {
     "community": "public",
     "timeout_sec": 3,

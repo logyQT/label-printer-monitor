@@ -15,7 +15,7 @@ Edit `config/config.json`:
 ```json
 {
   "db": { "filename": "printer_stats.db" },
-  "log_dir": "logs",
+  "logs": { "dir": "logs", "retention_days": 30 },
   "snmp": { "community": "public", "timeout_sec": 3, "retries": 2 },
   "collection": { "max_concurrency": 20 },
   "printers": [
@@ -163,7 +163,7 @@ config/
 data/
   printer_stats.db      # SQLite database (gitignored)
   backups/              # auto-backup before each run (gitignored)
-logs/                   # per-run log files (gitignored)
+logs/                   # per-run log files, pruned after logs.retention_days (gitignored)
 src/
   adapters/             # printer adapters (declarative SNMP specs)
   converters.py         # unit conversion (cm/in/ft/mm -> meters)
