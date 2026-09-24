@@ -99,6 +99,29 @@ Section "Install"
 
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
+    ; --- Machine-wide data directory -----------------------------------
+    ; Config, database and logs live outside any user profile, so a headless
+    ; scheduled run resolves the same paths no matter whose account
+    ; registered the task (and whether that profile is loaded at all).
+    ; NSIS has no built-in constant for the common appdata directory, so the
+    ; variable is expanded explicitly (and falls back to the well-known path,
+    ; mirroring _DEFAULT_PROGRAMDATA in src\env.py).
+    ExpandEnvStrings $R9 "%ProgramData%"
+    ${If} $R9 == ""
+    ${OrIf} $R9 == "%ProgramData%"
+        StrCpy $R9 "C:\ProgramData"
+    ${EndIf}
+    CreateDirectory "$R9\com.logy.lpm"
+
+    ; This installer runs elevated, but the scheduled task runs
+    ; LeastPrivilege: a folder created here inherits admin-only ACLs, so
+    ; grant BUILTIN\Users modify explicitly. *S-1-5-32-545 is that group's
+    ; locale-independent SID.
+    ExecWait 'icacls "$R9\com.logy.lpm" /grant *S-1-5-32-545:(OI)(CI)M /Q' $0
+    ${If} $0 != 0
+        DetailPrint "icacls could not grant write access (exit code $0) - scheduled runs may fail to write data"
+    ${EndIf}
+
     ; --- Add/Remove Programs entry ---
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm" \
         "DisplayName" "lpm - Label Printer Monitor"
@@ -120,7 +143,7 @@ Section "Install"
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm" \
         "EstimatedSize" "$0"
 
-    MessageBox MB_ICONINFORMATION "Installation complete.$\r$\n$\r$\nOpen a terminal and run: lpm init"
+    MessageBox MB_ICONINFORMATION "Installation complete.$\r$\n$\r$\nConfig, data and logs are stored in:$R9\com.logy.lpm$\r$\n$\r$\nOpen a terminal and run: lpm init"
 SectionEnd
 
 ; ---------------------------------------------------------------------------
@@ -164,6 +187,9 @@ Section "Uninstall"
     ${EndIf}
 
     ; --- Delete all installed files ---
+    ; The ProgramData folder (%ProgramData%\com.logy.lpm) is intentionally
+    ; left in place: removing the program must not delete collected printer
+    ; history and the config.
     RMDir /r "$INSTDIR"
 
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm"

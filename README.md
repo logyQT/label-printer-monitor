@@ -50,6 +50,34 @@ leaves). With piped/redirected stdin, bare `lpm` prints the full help instead.
 
 Lint: `ruff check .` / `ruff format .` / `mypy`
 
+## Where files live
+
+| Run mode | Config / data / logs |
+| --- | --- |
+| From source (`python main.py`) | next to the repo: `config/`, `data/`, `logs/` |
+| Installed build (`lpm.exe`) | `%ProgramData%\com.logy.lpm\` (typically `C:\ProgramData\com.logy.lpm`) |
+
+The installed location is machine-wide on purpose: it is the same for every
+Windows account, exists without a user profile loaded, and is therefore
+identical for the interactive CLI and for a headless Task Scheduler run
+(pre-login, no password, no elevation). A per-user location such as
+`%APPDATA%` would give the scheduled task a different config, database and
+log tree than the one an operator edits.
+
+Set `LPM_HOME` to relocate an installed build's data. It points at the
+folder that directly contains `config/`, `data/` and `logs/`.
+
+The install location itself (`Program Files`, `Program Files (x86)`, or a
+directory you pick on the installer's directory page) does not matter: the
+app asks Windows for its own running image (`src.env.exe_path()` — not
+`sys.executable`, which reports a phantom `python.exe` in a frozen build),
+so the scheduled task is pinned to the real `lpm.exe` wherever it ended up. Only the *data* location
+has to be writable by the account running the task - the NSIS installer
+creates it and grants `BUILTIN\Users` modify. For a zip distribution (no
+installer), create `%ProgramData%\com.logy.lpm` and run `lpm init` as the
+account that will own the scheduled task, otherwise that folder belongs
+solely to whoever created it.
+
 ## Compiled binary
 
 Build with [Nuitka](https://nuitka.net/):
@@ -93,8 +121,18 @@ lpm validate --network
 
 ### Windows (Task Scheduler)
 
+Preferred: `lpm schedule` (run as administrator) creates and maintains
+`\LPM\LPM_Collect` from the `schedule` section of `config.json`, and pins
+the absolute path of `lpm.exe` into the task so headless runs never depend
+on PATH.
+
+Registering manually instead - read the install location from the registry key
+the installer writes, so a custom install directory (or a 32-bit build under
+`Program Files (x86)`) is handled without editing the script:
+
 ```powershell
-$action = New-ScheduledTaskAction -Execute "lpm" -Argument "collect"
+$exe = Join-Path (Get-ItemProperty 'HKLM:\Software\lpm').InstallDir 'lpm.exe'
+$action = New-ScheduledTaskAction -Execute $exe -Argument "collect" -WorkingDirectory (Split-Path $exe)
 $trigger1 = New-ScheduledTaskTrigger -Daily -At "05:00"
 $trigger2 = New-ScheduledTaskTrigger -Daily -At "15:00"
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)

@@ -10,11 +10,11 @@ Implements the plan's Cases 1 & 2, plus a disabled guard:
 from __future__ import annotations
 
 import json
+import os
 import re
-import shutil
 from typing import TYPE_CHECKING, Any
 
-from src.schedule.commands import LOGON_TYPE, connect, get_task_xml
+from src.schedule.commands import LOGON_TYPE, connect, get_task_xml, unescape_xml
 from src.validate import FAIL, OK, WARN, Issue
 
 if TYPE_CHECKING:
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 TIME_PATTERN: re.Pattern[str] = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _TRIGGER_TIME: re.Pattern[str] = re.compile(r"<StartBoundary>[^T]+T(\d\d:\d\d):")
+_COMMAND_XML: re.Pattern[str] = re.compile(r"<Command>(.*?)</Command>")
 # What build_task_xml() writes for the principal; a task registered before the
 # S4U change has InteractiveToken here and must be re-registered.
 EXPECTED_LOGON_XML = f"<LogonType>{LOGON_TYPE}</LogonType>"
@@ -60,6 +61,16 @@ def extract_task_triggers(task_xml: str) -> tuple[list[str], bool]:
     """Pull (sorted unique HH:MM trigger times, weekdays-only flag) from task XML."""
     times = sorted(set(_TRIGGER_TIME.findall(task_xml)))
     return times, "<DaysOfWeek>" in task_xml
+
+
+def extract_task_command(task_xml: str) -> str | None:
+    """Return the action's ``<Command>`` value, or None when the XML has none.
+
+    XML-escaped by build_task_xml(), so it is unescaped back to the plain
+    filesystem path for comparison against the local lpm.exe.
+    """
+    match = _COMMAND_XML.search(task_xml)
+    return unescape_xml(match.group(1)) if match else None
 
 
 def _matches_config(task_xml: str, schedule: dict[str, Any]) -> bool:
@@ -123,8 +134,25 @@ def check_schedule(config_path: str, project_root: str) -> list[Issue]:
     # Case 2: schedule section exists - the task must exist and match.
     if task_xml is None:
         return [Issue(WARN, "No scheduled task found. Run lpm schedule to create one.")]
-    if shutil.which("lpm") is None:
-        return [Issue(FAIL, "Scheduled task points to missing executable")]
+
+    # The action must name an existing lpm.exe by absolute path: a bare
+    # "lpm" depends on the PATH the task host resolves it with at fire
+    # time, which is not the PATH the operator sees (nor necessarily the
+    # one the installer just updated).
+    command = extract_task_command(task_xml)
+    if command is None:
+        return [Issue(WARN, "Scheduled task has no command. Run lpm schedule to recreate it.")]
+    if not os.path.isabs(command):
+        return [
+            Issue(
+                WARN,
+                f"Scheduled task runs the bare command {command!r}, resolved via PATH at run "
+                f"time. Run lpm schedule to pin the absolute path to lpm.exe.",
+            )
+        ]
+    if not os.path.isfile(command):
+        return [Issue(FAIL, f"Scheduled task points to missing executable: {command}")]
+
     if _matches_config(task_xml, schedule_section):
         return [Issue(OK, "Scheduled task matches config")]
     return [Issue(WARN, "Scheduled task differs from config. Run lpm schedule to update.")]

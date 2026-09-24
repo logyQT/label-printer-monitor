@@ -54,6 +54,7 @@ from src.env import (  # noqa: E402
     bundled_config_dir,
     config_dir,
     data_dir,
+    exe_path,
     logs_dir,
 )
 from src.shell import run_shell  # noqa: E402
@@ -71,7 +72,8 @@ def _project_root() -> str:
     r"""Return the base directory for relative path resolution.
 
     In dev mode this is the repo root (same as _HERE).
-    In frozen/exe mode this is %APPDATA%\com.logy.lpm.
+    In frozen/exe mode this is the machine-wide data root
+    (%ProgramData%\com.logy.lpm, or %LPM_HOME% when set).
     All config-relative paths (logs.dir, db filename, etc.) resolve
     against this.
     """
@@ -90,8 +92,8 @@ def _schema_path() -> str:
 def _refresh_schema_copy() -> bool:
     """Copy the shipped schema over the config-dir one when missing or stale.
 
-    %APPDATA% keeps a copy written at first `init`; without a refresh, schema
-    changes never reach existing installs and `validate` fails with
+    The data root keeps a copy written at first `init`; without a refresh,
+    schema changes never reach existing installs and `validate` fails with
     "Additional properties are not allowed". Byte-compare so the copy is only
     rewritten when it actually differs. No-op when both paths resolve to the
     same file (dev mode) or the shipped file is unavailable.
@@ -461,7 +463,7 @@ def _handle_validate(args: argparse.Namespace) -> None:
 
     config_path = _config_path()
 
-    # Replace a stale %APPDATA% schema copy before validating against it.
+    # Replace a stale schema copy in the data root before validating.
     if _refresh_schema_copy():
         print(f"Refreshed stale schema copy: {_schema_path()}")
 
@@ -516,17 +518,20 @@ def _handle_schedule(args: argparse.Namespace) -> None:
 
     if not FROZEN:
         print("ERROR: lpm schedule requires a built version (lpm.exe).", file=sys.stderr)
-        print("Build with build.py first, then ensure lpm is on PATH.", file=sys.stderr)
+        print("Build with build.py first, then run lpm schedule as administrator.", file=sys.stderr)
         sys.exit(1)
 
-    lpm_path = shutil.which("lpm")
-    if lpm_path is None:
-        print("ERROR: 'lpm' not found on PATH.", file=sys.stderr)
-        print("Add the directory containing lpm.exe to your PATH.", file=sys.stderr)
-        sys.exit(1)
+    # Pin the task to this exact binary, by its own path - not the bare
+    # name "lpm": the scheduled-task host resolves a bare command against
+    # the environment ITS process was started with, which can predate the
+    # PATH entry this very install just added (the Task Scheduler service
+    # does not reload the registry environment), and it would pick up any
+    # other lpm.exe sitting earlier on that PATH.  sys.executable is no
+    # help either: in the frozen build it reports a phantom
+    # <dir>\python.exe that is never shipped (see env.exe_path).
+    exe = exe_path()
     if verbose:
-        print(f"Running from: {sys.executable}")
-        print(f"'lpm' resolved on PATH: {lpm_path}")
+        print(f"Running from: {exe}")
 
     config = load_config()
     if "schedule" not in config:
@@ -546,7 +551,7 @@ def _handle_schedule(args: argparse.Namespace) -> None:
         print("Schedule is disabled in config.")
         return
 
-    install(config, verbose=verbose)
+    install(config, exe_path=exe, verbose=verbose)
 
 
 # ── report ───────────────────────────────────────────────────────────

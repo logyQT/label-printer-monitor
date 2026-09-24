@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import os
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -18,8 +19,13 @@ import main
 from src.schedule import check, install, remove
 from src.schedule.commands import build_task_xml, folder_exists
 from src.schedule.meta import TASK_FOLDER
-from src.schedule.validate import check_schedule, validate_schedule_config
+from src.schedule.validate import check_schedule, extract_task_command, validate_schedule_config
 from src.validate import FAIL, OK, WARN, Issue
+
+# A real, existing file: the task XML must name lpm.exe by absolute path, and
+# check_schedule verifies that path actually exists.  sys.executable keeps
+# both true in tests without touching the real install.
+EXE: str = os.path.abspath(sys.executable)
 
 VALID_SCHEDULE: dict = {
     "enabled": True,
@@ -64,38 +70,55 @@ class TestBuildTaskXml(unittest.TestCase):
     """build_task_xml() trigger and structure tests."""
 
     def test_multi_time_triggers(self) -> None:
-        xml = build_task_xml(["05:00", "15:00"], True)
+        xml = build_task_xml(["05:00", "15:00"], True, EXE)
         self.assertEqual(xml.count("<CalendarTrigger>"), 2)
         self.assertIn("<StartBoundary>2026-01-01T05:00:00</StartBoundary>", xml)
         self.assertIn("<StartBoundary>2026-01-01T15:00:00</StartBoundary>", xml)
 
-        single = build_task_xml(["07:30"], True)
+        single = build_task_xml(["07:30"], True, EXE)
         self.assertEqual(single.count("<CalendarTrigger>"), 1)
         self.assertIn("T07:30:00", single)
 
     def test_weekdays_only_flag(self) -> None:
-        weekdays = build_task_xml(["05:00"], True)
+        weekdays = build_task_xml(["05:00"], True, EXE)
         self.assertIn("<DaysOfWeek>", weekdays)
         self.assertIn("<ScheduleByWeek>", weekdays)
         self.assertNotIn("<ScheduleByDay>", weekdays)
         self.assertIn("<Monday/>", weekdays)
         self.assertIn("<Friday/>", weekdays)
 
-        daily = build_task_xml(["05:00"], False)
+        daily = build_task_xml(["05:00"], False, EXE)
         self.assertNotIn("<DaysOfWeek>", daily)
         self.assertNotIn("<ScheduleByWeek>", daily)
         self.assertIn("<ScheduleByDay>", daily)
         self.assertIn("<DaysInterval>1</DaysInterval>", daily)
 
     def test_action_and_settings(self) -> None:
-        xml = build_task_xml(["05:00"], True)
-        self.assertIn("<Command>lpm</Command>", xml)
+        xml = build_task_xml(["05:00"], True, EXE)
+        self.assertIn(f"<Command>{EXE}</Command>", xml)
         self.assertIn("<Arguments>collect</Arguments>", xml)
+        self.assertIn(f"<WorkingDirectory>{os.path.dirname(EXE)}</WorkingDirectory>", xml)
         self.assertIn("<WakeToRun>true</WakeToRun>", xml)
         self.assertIn("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>", xml)
         self.assertIn("<LogonType>S4U</LogonType>", xml)
         self.assertNotIn("InteractiveToken", xml)
         self.assertIn("<RunLevel>LeastPrivilege</RunLevel>", xml)
+
+    def test_command_is_absolute_path_not_bare_name(self) -> None:
+        # A bare "lpm" is resolved by the task host via PATH at fire time;
+        # the action must carry the full path so headless runs can't miss it.
+        command = extract_task_command(build_task_xml(["05:00"], True, EXE))
+        self.assertEqual(command, EXE)
+        self.assertTrue(os.path.isabs(command or ""))
+
+    def test_xml_escapes_special_characters_in_path(self) -> None:
+        # Install dirs with & or < must not produce malformed task XML.
+        xml = build_task_xml(["05:00"], True, r"C:\Program Files\lpm (a&b)\lpm.exe")
+        self.assertIn(
+            r"<Command>C:\Program Files\lpm (a&amp;b)\lpm.exe</Command>",
+            xml,
+        )
+        self.assertEqual(extract_task_command(xml), r"C:\Program Files\lpm (a&b)\lpm.exe")
 
 
 class TestScheduleConfigValidation(unittest.TestCase):
@@ -149,7 +172,7 @@ class TestScheduleConfigValidation(unittest.TestCase):
 
 
 class TestScheduleHandler(unittest.TestCase):
-    """_handle_schedule() gates: admin (first), FROZEN, PATH, config, disabled."""
+    """_handle_schedule() gates: admin (first), FROZEN, config, disabled."""
 
     def test_schedule_requires_admin(self) -> None:
         """Admin gate fires first, before any other message (e.g. FROZEN)."""
@@ -180,25 +203,27 @@ class TestScheduleHandler(unittest.TestCase):
         self.assertIn("ERROR: lpm schedule requires a built version (lpm.exe).", err.getvalue())
         self.assertIn("Build with build.py first", err.getvalue())
 
-    def test_schedule_lpm_not_on_path(self) -> None:
-        err = io.StringIO()
+    @patch("src.schedule.commands.win32com.client.Dispatch")
+    def test_schedule_registers_absolute_exe_path(self, mock_dispatch: MagicMock) -> None:
+        """The task action pins the running binary, not a PATH-resolved name."""
+        configure_dispatch(mock_dispatch, task_xml=None)
+        config = {"schedule": dict(VALID_SCHEDULE)}
         with (
             patch("main._is_admin", return_value=True),
             patch("main.FROZEN", True),
-            patch("main.shutil.which", return_value=None),
-            contextlib.redirect_stderr(err),
-            self.assertRaises(SystemExit) as ctx,
+            patch("main.load_config", return_value=config),
+            contextlib.redirect_stdout(io.StringIO()),
         ):
             main._handle_schedule(argparse.Namespace(remove=False, verbose=False))
-        self.assertEqual(ctx.exception.code, 1)
-        self.assertIn("ERROR: 'lpm' not found on PATH.", err.getvalue())
+        lpm = mock_dispatch.return_value.GetFolder(TASK_FOLDER)
+        xml = lpm.RegisterTask.call_args.args[1]
+        self.assertEqual(extract_task_command(xml), os.path.abspath(sys.executable))
 
     def test_schedule_no_config_section(self) -> None:
         err = io.StringIO()
         with (
             patch("main._is_admin", return_value=True),
             patch("main.FROZEN", True),
-            patch("main.shutil.which", return_value="C:\\bin\\lpm.exe"),
             patch("main.load_config", return_value={}),
             contextlib.redirect_stderr(err),
             self.assertRaises(SystemExit) as ctx,
@@ -214,7 +239,6 @@ class TestScheduleHandler(unittest.TestCase):
         with (
             patch("main._is_admin", return_value=True),
             patch("main.FROZEN", True),
-            patch("main.shutil.which", return_value="C:\\bin\\lpm.exe"),
             patch("main.load_config", return_value=config),
             patch("src.schedule.commands.win32com.client.Dispatch") as mock_dispatch,
             contextlib.redirect_stdout(out),
@@ -245,7 +269,6 @@ class TestScheduleHandler(unittest.TestCase):
         with (
             patch("main._is_admin", return_value=True),
             patch("main.FROZEN", True),
-            patch("main.shutil.which", return_value="C:\\bin\\lpm.exe"),
             patch("main.load_config", return_value=config),
             patch("src.schedule.commands.win32com.client.Dispatch", mock_dispatch),
             contextlib.redirect_stdout(out),
@@ -254,20 +277,19 @@ class TestScheduleHandler(unittest.TestCase):
         self.assertIn("Schedule created", out.getvalue())
 
     def test_schedule_verbose_narrates_gates(self) -> None:
-        """-v prints each stage as it passes (admin -> frozen -> PATH -> config)."""
+        """-v prints each stage as it passes (admin -> frozen -> command -> config)."""
         config = {"schedule": {"enabled": False, "times": ["05:00"]}}
         out = io.StringIO()
         with (
             patch("main._is_admin", return_value=True),
             patch("main.FROZEN", True),
-            patch("main.shutil.which", return_value="C:\\bin\\lpm.exe"),
             patch("main.load_config", return_value=config),
             contextlib.redirect_stdout(out),
         ):
             main._handle_schedule(argparse.Namespace(remove=False, verbose=True))
         text = out.getvalue()
         self.assertIn("Elevated session: ok", text)
-        self.assertIn("'lpm' resolved on PATH: C:\\bin\\lpm.exe", text)
+        self.assertIn(f"Running from: {os.path.abspath(sys.executable)}", text)
         self.assertIn("Schedule is disabled in config.", text)
 
 
@@ -279,7 +301,7 @@ class TestInstallRemove(unittest.TestCase):
         configure_dispatch(mock_dispatch, task_xml=None)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            install({"schedule": dict(VALID_SCHEDULE)})
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
         self.assertIn("Schedule created", out.getvalue())
 
         scheduler = mock_dispatch.return_value
@@ -298,10 +320,10 @@ class TestInstallRemove(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_task_update(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], False))
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], False, EXE))
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            install({"schedule": dict(VALID_SCHEDULE)})
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
         self.assertIn("Schedule updated", out.getvalue())
 
         scheduler = mock_dispatch.return_value
@@ -311,10 +333,10 @@ class TestInstallRemove(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_task_up_to_date(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], True))
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], True, EXE))
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            install({"schedule": dict(VALID_SCHEDULE)})
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
         self.assertIn("Schedule is up to date.", out.getvalue())
 
         scheduler = mock_dispatch.return_value
@@ -350,11 +372,11 @@ class TestInstallRemove(unittest.TestCase):
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_task_update_logon_type(self, mock_dispatch: MagicMock) -> None:
         # Task registered before the S4U change: triggers match, principal doesn't.
-        old_xml = build_task_xml(["05:00", "15:00"], True).replace("S4U", "InteractiveToken")
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace("S4U", "InteractiveToken")
         configure_dispatch(mock_dispatch, task_xml=old_xml)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            install({"schedule": dict(VALID_SCHEDULE)})
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
         self.assertIn("Schedule updated", out.getvalue())
         scheduler = mock_dispatch.return_value
         self.assertEqual(scheduler.GetFolder(TASK_FOLDER).RegisterTask.call_count, 1)
@@ -363,23 +385,53 @@ class TestInstallRemove(unittest.TestCase):
     def test_task_update_stale_collect_arguments(self, mock_dispatch: MagicMock) -> None:
         # Task registered before the subcommand change: runs `lpm --collect`,
         # which the new CLI rejects. Triggers match, but it must re-register.
-        old_xml = build_task_xml(["05:00", "15:00"], True).replace(
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace(
             "<Arguments>collect</Arguments>", "<Arguments>--collect</Arguments>"
         )
         configure_dispatch(mock_dispatch, task_xml=old_xml)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            install({"schedule": dict(VALID_SCHEDULE)})
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
         self.assertIn("Schedule updated", out.getvalue())
         scheduler = mock_dispatch.return_value
         self.assertEqual(scheduler.GetFolder(TASK_FOLDER).RegisterTask.call_count, 1)
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
-    def test_install_verbose_narrates_stages(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], True))
+    def test_task_update_stale_bare_command(self, mock_dispatch: MagicMock) -> None:
+        # Pre-pin task: the action runs a bare "lpm", which the task host
+        # resolves via PATH at fire time - must be re-registered absolute.
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace(
+            f"<Command>{EXE}</Command>", "<Command>lpm</Command>"
+        )
+        configure_dispatch(mock_dispatch, task_xml=old_xml)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            install({"schedule": dict(VALID_SCHEDULE)}, verbose=True)
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
+        self.assertIn("Schedule updated", out.getvalue())
+        lpm = mock_dispatch.return_value.GetFolder(TASK_FOLDER)
+        self.assertEqual(lpm.RegisterTask.call_count, 1)
+        self.assertEqual(extract_task_command(lpm.RegisterTask.call_args.args[1]), EXE)
+
+    @patch("src.schedule.commands.win32com.client.Dispatch")
+    def test_task_update_stale_exe_path(self, mock_dispatch: MagicMock) -> None:
+        # Task pinned to a different install (moved/old) must follow the
+        # lpm.exe that registers it now.
+        old_exe = os.path.join(os.path.dirname(EXE), "lpm-previous-install.exe")
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], True, old_exe))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
+        self.assertIn("Schedule updated", out.getvalue())
+        lpm = mock_dispatch.return_value.GetFolder(TASK_FOLDER)
+        self.assertEqual(lpm.RegisterTask.call_count, 1)
+        self.assertEqual(extract_task_command(lpm.RegisterTask.call_args.args[1]), EXE)
+
+    @patch("src.schedule.commands.win32com.client.Dispatch")
+    def test_install_verbose_narrates_stages(self, mock_dispatch: MagicMock) -> None:
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], True, EXE))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE, verbose=True)
         text = out.getvalue()
         self.assertIn("Config: times=['05:00', '15:00']", text)
         self.assertIn("Connecting to Task Scheduler...", text)
@@ -402,13 +454,13 @@ class TestInstallRemove(unittest.TestCase):
     def test_register_falls_back_to_delete_recreate(self, mock_dispatch: MagicMock) -> None:
         # Existing task differs (so register runs); principal change rejected
         # on update -> delete + recreate (plan flow).
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], False))
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], False, EXE))
         scheduler = mock_dispatch.return_value
         lpm = scheduler.GetFolder(TASK_FOLDER)
         lpm.RegisterTask.side_effect = [Exception("access denied"), None]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            install({"schedule": dict(VALID_SCHEDULE)})
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
         self.assertIn("Schedule updated", out.getvalue())
         lpm.DeleteTask.assert_called_once_with("LPM_Collect", 0)
         self.assertEqual(lpm.RegisterTask.call_count, 2)
@@ -418,18 +470,18 @@ class TestInstallRemove(unittest.TestCase):
         class RegisterError(Exception):
             """Stand-in for pywintypes.com_error (assertable without B017)."""
 
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], False))
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], False, EXE))
         scheduler = mock_dispatch.return_value
         lpm = scheduler.GetFolder(TASK_FOLDER)
         lpm.RegisterTask.side_effect = RegisterError("broken xml")
         with self.assertRaises(RegisterError):
-            install({"schedule": dict(VALID_SCHEDULE)})
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_install_rejects_bad_times(self, mock_dispatch: MagicMock) -> None:
         err = io.StringIO()
         with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as ctx:
-            install({"schedule": {"enabled": True, "times": ["bogus"]}})
+            install({"schedule": {"enabled": True, "times": ["bogus"]}}, EXE)
         self.assertEqual(ctx.exception.code, 1)
         self.assertIn("Invalid time", err.getvalue())
         mock_dispatch.assert_not_called()
@@ -438,7 +490,7 @@ class TestInstallRemove(unittest.TestCase):
     def test_install_requires_schedule_section(self, mock_dispatch: MagicMock) -> None:
         err = io.StringIO()
         with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as ctx:
-            install({})
+            install({}, EXE)
         self.assertEqual(ctx.exception.code, 1)
         self.assertIn("No 'schedule' section", err.getvalue())
         mock_dispatch.assert_not_called()
@@ -487,7 +539,7 @@ class TestCheckSchedule(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_disabled_with_task(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00"], True))
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00"], True, EXE))
         with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": {"enabled": False, "times": ["05:00"]}})
             issues = check_schedule(path, tmp)
@@ -507,22 +559,16 @@ class TestCheckSchedule(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_matches(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["15:00", "05:00"], True))
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("src.schedule.validate.shutil.which", return_value="C:\\bin\\lpm.exe"),
-        ):
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["15:00", "05:00"], True, EXE))
+        with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
             issues = check_schedule(path, tmp)
         self.assertEqual(issues, [Issue(OK, "Scheduled task matches config")])
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_differs(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], True))
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("src.schedule.validate.shutil.which", return_value="C:\\bin\\lpm.exe"),
-        ):
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], True, EXE))
+        with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
             issues = check_schedule(path, tmp)
         self.assertEqual(
@@ -532,23 +578,17 @@ class TestCheckSchedule(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_differs_on_weekdays_flag(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], False))
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("src.schedule.validate.shutil.which", return_value="C:\\bin\\lpm.exe"),
-        ):
+        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], False, EXE))
+        with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
             issues = check_schedule(path, tmp)
         self.assertEqual(issues[0].level, WARN)
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_differs_on_logon_type(self, mock_dispatch: MagicMock) -> None:
-        old_xml = build_task_xml(["05:00", "15:00"], True).replace("S4U", "InteractiveToken")
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace("S4U", "InteractiveToken")
         configure_dispatch(mock_dispatch, task_xml=old_xml)
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("src.schedule.validate.shutil.which", return_value="C:\\bin\\lpm.exe"),
-        ):
+        with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
             issues = check_schedule(path, tmp)
         self.assertEqual(
@@ -560,14 +600,11 @@ class TestCheckSchedule(unittest.TestCase):
     def test_validate_differs_on_collect_arguments(self, mock_dispatch: MagicMock) -> None:
         # Pre-subcommand task: triggers match but it runs `lpm --collect`,
         # which the new CLI rejects - validate must flag it as differing.
-        old_xml = build_task_xml(["05:00", "15:00"], True).replace(
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace(
             "<Arguments>collect</Arguments>", "<Arguments>--collect</Arguments>"
         )
         configure_dispatch(mock_dispatch, task_xml=old_xml)
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("src.schedule.validate.shutil.which", return_value="C:\\bin\\lpm.exe"),
-        ):
+        with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
             issues = check_schedule(path, tmp)
         self.assertEqual(
@@ -577,16 +614,44 @@ class TestCheckSchedule(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_orphaned_exe(self, mock_dispatch: MagicMock) -> None:
-        configure_dispatch(mock_dispatch, task_xml=build_task_xml(["05:00", "15:00"], True))
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("src.schedule.validate.shutil.which", return_value=None),
-        ):
+        # Pinned exe no longer on disk (uninstalled/moved) - the scheduled
+        # runs would fail outright.
+        orphan_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace(
+            f"<Command>{EXE}</Command>", r"<Command>C:\gone\lpm.exe</Command>"
+        )
+        configure_dispatch(mock_dispatch, task_xml=orphan_xml)
+        with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
             issues = check_schedule(path, tmp)
         self.assertEqual(
             issues,
-            [Issue(FAIL, "Scheduled task points to missing executable")],
+            [Issue(FAIL, r"Scheduled task points to missing executable: C:\gone\lpm.exe")],
+        )
+
+    @patch("src.schedule.commands.win32com.client.Dispatch")
+    def test_validate_bare_command(self, mock_dispatch: MagicMock) -> None:
+        # Pre-pin task with a PATH-resolved command: validate must flag the
+        # dependency the headless run would depend on.
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace(
+            f"<Command>{EXE}</Command>", "<Command>lpm</Command>"
+        )
+        configure_dispatch(mock_dispatch, task_xml=old_xml)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
+            issues = check_schedule(path, tmp)
+        self.assertEqual(issues[0].level, WARN)
+        self.assertIn("bare command 'lpm'", issues[0].message)
+        self.assertIn("lpm schedule", issues[0].message)
+
+    @patch("src.schedule.commands.win32com.client.Dispatch")
+    def test_validate_task_without_command(self, mock_dispatch: MagicMock) -> None:
+        configure_dispatch(mock_dispatch, task_xml="<Task/>")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
+            issues = check_schedule(path, tmp)
+        self.assertEqual(
+            issues,
+            [Issue(WARN, "Scheduled task has no command. Run lpm schedule to recreate it.")],
         )
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
@@ -642,7 +707,7 @@ class TestSchemaGuard(unittest.TestCase):
 
 
 class TestSchemaRefresh(unittest.TestCase):
-    """_refresh_schema_copy() replaces the stale %APPDATA% copy on validate."""
+    """_refresh_schema_copy() replaces the stale data-root copy on validate."""
 
     def _write(self, path: str, data: bytes) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -653,7 +718,7 @@ class TestSchemaRefresh(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             src_dir = os.path.join(root, "shipped")
             src = os.path.join(src_dir, "config.json.schema")
-            dst = os.path.join(root, "appdata", "config.json.schema")
+            dst = os.path.join(root, "datadir", "config.json.schema")
             self._write(src, b'{"new": true}')
             self._write(dst, b'{"old": true}')
             with (
@@ -669,7 +734,7 @@ class TestSchemaRefresh(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             src_dir = os.path.join(root, "shipped")
             src = os.path.join(src_dir, "config.json.schema")
-            dst = os.path.join(root, "appdata", "config.json.schema")
+            dst = os.path.join(root, "datadir", "config.json.schema")
             self._write(src, b'{"same": true}')
             self._write(dst, b'{"same": true}')
             with (
@@ -691,7 +756,7 @@ class TestSchemaRefresh(unittest.TestCase):
 
     def test_noop_when_source_missing(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            dst = os.path.join(root, "appdata", "config.json.schema")
+            dst = os.path.join(root, "datadir", "config.json.schema")
             self._write(dst, b'{"keep": true}')
             with (
                 patch("main.bundled_config_dir", return_value=os.path.join(root, "absent")),

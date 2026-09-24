@@ -5,6 +5,7 @@ All win32com usage lives here. win32com is imported lazily - inside
 this module never requires pywin32 until a COM call actually runs.
 """
 
+import os
 from contextlib import suppress
 from typing import Any
 
@@ -19,9 +20,11 @@ __all__ = [
     "build_task_xml",
     "connect",
     "delete_task",
+    "escape_xml",
     "folder_exists",
     "get_task_xml",
     "register_task",
+    "unescape_xml",
 ]
 
 
@@ -39,8 +42,47 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def build_task_xml(times: list[str], weekdays_only: bool) -> str:
-    """Build the task definition XML for \\LPM\\LPM_Collect (one trigger per time)."""
+# These two replace xml.sax.saxutils: the frozen build ships without the
+# stdlib ``xml`` package (build.py --nofollow-import-to=...,xml,...), so an
+# import of it compiles fine and then explodes at runtime in lpm.exe.
+
+_XML_ENTITIES: tuple[tuple[str, str], ...] = (
+    ("&", "&amp;"),  # first, so the references inserted below stay intact
+    ("<", "&lt;"),
+    (">", "&gt;"),
+    ('"', "&quot;"),
+    ("'", "&apos;"),
+)
+
+
+def escape_xml(text: str) -> str:
+    """Escape *text* so it is safe as XML element content (mirrors saxutils)."""
+    for char, ref in _XML_ENTITIES:
+        text = text.replace(char, ref)
+    return text
+
+
+def unescape_xml(text: str) -> str:
+    """Reverse escape_xml() (mirrors xml.sax.saxutils.unescape).
+
+    ``&amp;`` is resolved last so that ``&amp;lt;`` - an escaped literal
+    ``&lt;`` - comes back as ``&lt;`` and not as ``<``.
+    """
+    for ref, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'")):
+        text = text.replace(ref, char)
+    return text.replace("&amp;", "&")
+
+
+def build_task_xml(times: list[str], weekdays_only: bool, exe_path: str) -> str:
+    r"""Build the task definition XML for \\LPM\\LPM_Collect (one trigger per time).
+
+    *exe_path* is the absolute path of lpm.exe and becomes the task's
+    ``<Command>`` (with ``<WorkingDirectory>`` set to its folder).  A bare
+    ``lpm`` would be resolved by the Task Scheduler service against whatever
+    PATH that service sees at fire time - a stale one, right after an install
+    that only just added the install dir to the machine PATH - which silently
+    breaks every headless run.
+    """
     triggers: list[str] = []
     for time_str in times:
         if weekdays_only:
@@ -82,8 +124,9 @@ def build_task_xml(times: list[str], weekdays_only: bool) -> str:
         "  </Settings>\n"
         '  <Actions Context="Author">\n'
         "    <Exec>\n"
-        "      <Command>lpm</Command>\n"
+        f"      <Command>{escape_xml(exe_path)}</Command>\n"
         "      <Arguments>collect</Arguments>\n"
+        f"      <WorkingDirectory>{escape_xml(os.path.dirname(exe_path))}</WorkingDirectory>\n"
         "    </Exec>\n"
         "  </Actions>\n"
         "</Task>"

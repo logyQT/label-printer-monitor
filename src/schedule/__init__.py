@@ -10,6 +10,7 @@ from src.schedule.meta import TASK_PATH
 from src.schedule.validate import (
     EXPECTED_ARGS_XML,
     EXPECTED_LOGON_XML,
+    extract_task_command,
     extract_task_triggers,
     validate_schedule_config,
 )
@@ -20,8 +21,14 @@ if TYPE_CHECKING:
 __all__ = ["check", "install", "remove"]
 
 
-def install(config: Config, verbose: bool = False) -> None:
-    """Create or update the \\LPM\\LPM_Collect task from config['schedule']."""
+def install(config: Config, exe_path: str, verbose: bool = False) -> None:
+    r"""Create or update the \\LPM\\LPM_Collect task from config['schedule'].
+
+    *exe_path* is the absolute path of the lpm.exe running this command and
+    is pinned into the task action.  An existing task that runs anything
+    else - a bare ``lpm`` resolved through PATH, or another install's exe -
+    is re-registered, so a headless run always starts the same binary.
+    """
     if "schedule" not in config:
         print("ERROR: No 'schedule' section in config.json.", file=sys.stderr)
         print("Add a schedule section, e.g.:", file=sys.stderr)
@@ -44,6 +51,7 @@ def install(config: Config, verbose: bool = False) -> None:
 
     if verbose:
         print(f"Config: times={times}, weekdays_only={weekdays_only}, enabled={schedule.get('enabled')}")
+        print(f"Task command: {exe_path}")
         print("Connecting to Task Scheduler...")
 
     scheduler = connect()
@@ -63,6 +71,8 @@ def install(config: Config, verbose: bool = False) -> None:
             mismatches.append(f"logon type is not {LOGON_TYPE}")
         if EXPECTED_ARGS_XML not in task_xml:
             mismatches.append("action arguments are not 'collect'")
+        if extract_task_command(task_xml) != exe_path:
+            mismatches.append(f"task command is not {exe_path}")
         if not mismatches:
             if verbose:
                 print(f"Existing task {TASK_PATH}: matches config")
@@ -73,7 +83,7 @@ def install(config: Config, verbose: bool = False) -> None:
 
     if verbose:
         print("Registering task XML")
-    register_task(scheduler, build_task_xml(times, weekdays_only))
+    register_task(scheduler, build_task_xml(times, weekdays_only, exe_path))
     print("Schedule updated" if task_xml is not None else "Schedule created")
 
 
