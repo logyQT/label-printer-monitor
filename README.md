@@ -110,6 +110,38 @@ lpm report --csv
 lpm validate --network
 ```
 
+## Uninstalling
+
+`uninstall.exe` (via Add/Remove Programs, or from `$INSTDIR`) shows a
+cleanup page instead of the plain confirmation dialog:
+
+| Cleanup | Default | What it removes |
+|---|---|---|
+| Scheduled collection task | **always** | `\LPM\LPM_Collect` - a task left behind would keep firing at the deleted `lpm.exe` |
+| Prune configuration | off | `<data root>\config` (`config.json`, schema, example) |
+| Prune data | off | `<data root>\data` - the database and `backups/` (collected printer history) |
+| Prune logs | off | `<data root>\logs` |
+| Program files, PATH, registry | **always** | the install directory, the PATH entry, the Add/Remove Programs entry |
+
+Config, data and logs are **kept unless checked**, so reinstalling later
+starts from the same state. Silent variants:
+
+```bash
+uninstall.exe /S             # mandatory cleanup only (task + program files)
+uninstall.exe /S /PURGE      # everything, including config/data/logs
+```
+
+The cleanup delegates to `lpm purge` while `lpm.exe` is still installed
+(with a `schtasks`/`RMDir` fallback for a broken install). The command also
+works standalone - for a zip distribution with no installer, or for a
+rehearsal:
+
+```bash
+lpm purge --tasks            # remove \LPM\LPM_Collect (needs elevation)
+lpm purge --logs --dry-run   # show what would go, delete nothing
+lpm purge --all              # task + config + data + logs
+```
+
 ## Scheduling
 
 ### Linux (cron)

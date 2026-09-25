@@ -4,6 +4,21 @@
 ;   1. python build.py               -> dist/main.dist/lpm.exe (standalone)
 ;   2. makensis installer\lpm.nsi    -> installer/lpm-setup.exe
 ;
+; Uninstall behavior - the components page doubles as the confirmation step:
+;   [x] Scheduled collection task    always removed (read-only). A task left
+;                                    behind would keep firing at the deleted
+;                                    lpm.exe.
+;   [ ] Prune configuration          opt-in: <data root>\config
+;   [ ] Prune data                   opt-in: <data root>\data (database + backups)
+;   [ ] Prune logs                   opt-in: <data root>\logs
+;   [x] Program files, PATH, registry always removed (read-only)
+;
+;   Cleanup delegates to `lpm purge ...` while lpm.exe is still installed
+;   (it resolves %LPM_HOME%/%ProgramData% itself and drops the data root
+;   when the prunes emptied it), with schtasks/RMDir fallbacks for a broken
+;   install. Silent: uninstall.exe /S (mandatory parts only) or
+;   uninstall.exe /S /PURGE (everything).
+;
 ; Requires: NSIS 3.x (https://nsis.sourceforge.io/Download)
 
 !include "MUI2.nsh"
@@ -40,10 +55,19 @@ VIAddVersionKey "LegalCopyright" "logy"
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
-!insertmacro MUI_UNPAGE_CONFIRM
+; Replaces MUI_UNPAGE_CONFIRM: the cleanup checkboxes ARE the confirmation -
+; mandatory items are read-only, everything else is opt-in (off by default).
+!insertmacro MUI_UNPAGE_COMPONENTS
 !insertmacro MUI_UNPAGE_INSTFILES
 
 !insertmacro MUI_LANGUAGE "English"
+
+; Hover descriptions for the uninstall components page.
+LangString SecTaskDesc ${LANG_ENGLISH} "The \LPM\LPM_Collect scheduled task. Always removed - it would keep firing at a deleted lpm.exe otherwise."
+LangString SecPruneConfigDesc ${LANG_ENGLISH} "config.json, schema and example in <data root>\config. Kept unless checked."
+LangString SecPruneDataDesc ${LANG_ENGLISH} "Statistics database and backups in <data root>\data - your collected printer history. Kept unless checked."
+LangString SecPruneLogsDesc ${LANG_ENGLISH} "Log files in <data root>\logs. Kept unless checked."
+LangString SecProgramDesc ${LANG_ENGLISH} "Program files, the PATH entry and the Add/Remove Programs entry."
 
 ; ---------------------------------------------------------------------------
 ; Install
@@ -147,9 +171,105 @@ Section "Install"
 SectionEnd
 
 ; ---------------------------------------------------------------------------
-; Uninstall
+; Uninstall - helpers
 ; ---------------------------------------------------------------------------
-Section "Uninstall"
+
+; Data root fallback used by the direct-delete branch below. Mirrors
+; src\env.py: %LPM_HOME% (machine env, then the current user's) wins over
+; %ProgramData%\com.logy.lpm. Only needed when lpm.exe is missing or broken -
+; whenever it can run, lpm.exe itself is the authority on the data root.
+Function un.ResolveDataRoot
+    ReadRegStr $R8 HKLM \
+        "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "LPM_HOME"
+    ${If} $R8 == ""
+        ReadRegStr $R8 HKCU "Environment" "LPM_HOME"
+    ${EndIf}
+    ${If} $R8 == ""
+        ExpandEnvStrings $R8 "%ProgramData%"
+        ${If} $R8 == ""
+        ${OrIf} $R8 == "%ProgramData%"
+            StrCpy $R8 "C:\ProgramData"
+        ${EndIf}
+        StrCpy $R8 "$R8\com.logy.lpm"
+    ${EndIf}
+FunctionEnd
+
+; One optional data prune. Prefer `lpm purge --<flag>` while lpm.exe is still
+; installed (it resolves %LPM_HOME%/%ProgramData% itself and drops the data
+; root when the prunes emptied it); fall back to a direct delete when the exe
+; is missing or the command fails. nsExec returns "error"/"timeout" instead
+; of an exit code - comparisons against "0" are string compares, so those
+; land in the fallback branch as intended.
+!macro PruneDataDir FLAG
+    DetailPrint "Pruning ${FLAG}..."
+    nsExec::ExecToLog '"$INSTDIR\lpm.exe" purge --${FLAG}'
+    Pop $R7
+    ${If} $R7 == "0"
+        DetailPrint "lpm purge --${FLAG}: done"
+    ${Else}
+        DetailPrint "lpm purge --${FLAG} unavailable (result: $R7) - deleting directly"
+        Call un.ResolveDataRoot
+        DetailPrint "Removing $R8\${FLAG}"
+        RMDir /r "$R8\${FLAG}"
+        ; Drop the data root when that emptied it - non-recursive RMDir
+        ; fails harmlessly while anything else remains in it.
+        RMDir "$R8"
+    ${EndIf}
+!macroend
+
+; ---------------------------------------------------------------------------
+; Uninstall - sections
+; ---------------------------------------------------------------------------
+; Sections run in declaration order while $INSTDIR\lpm.exe is still on disk,
+; so all cleanup comes before the program files (SecProgram, last).
+; Each name needs the 'un.' prefix to be classified as an uninstaller
+; section; un.onInit below rewrites the display names so the components tree
+; shows clean labels whatever the compiler does with the prefix.
+
+Section "un.Scheduled collection task" SecTask
+    SectionIn RO
+
+    ; A collect run may still hold lpm.exe and the database - end it first.
+    ; Harmless when the task is not running or not registered.
+    nsExec::ExecToLog '"$SYSDIR\schtasks.exe" /End /TN "\LPM\LPM_Collect" /Q'
+    Pop $R7
+
+    ; lpm purge also removes the empty \LPM folder, which schtasks cannot do.
+    ; nsExec yields "error" when lpm.exe itself is missing.
+    nsExec::ExecToLog '"$INSTDIR\lpm.exe" purge --tasks'
+    Pop $R7
+    ${If} $R7 != "0"
+        DetailPrint "lpm purge --tasks unavailable (result: $R7) - falling back to schtasks"
+        nsExec::ExecToLog '"$SYSDIR\schtasks.exe" /Delete /TN "\LPM\LPM_Collect" /F'
+        Pop $R7
+        DetailPrint "schtasks /Delete result: $R7 (1 = no such task)"
+    ${EndIf}
+
+    ; Verify: a task left behind would keep firing at the deleted lpm.exe.
+    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /Query /TN "\LPM\LPM_Collect"'
+    Pop $R7
+    Pop $R8
+    ${If} $R7 == "0"
+        DetailPrint "WARNING: \LPM\LPM_Collect still exists - remove it manually with:"
+        DetailPrint "  schtasks /Delete /TN \LPM\LPM_Collect /F"
+    ${EndIf}
+SectionEnd
+
+Section /o "un.Prune configuration" SecPruneConfig
+    !insertmacro PruneDataDir config
+SectionEnd
+
+Section /o "un.Prune data" SecPruneData
+    !insertmacro PruneDataDir data
+SectionEnd
+
+Section /o "un.Prune logs" SecPruneLogs
+    !insertmacro PruneDataDir logs
+SectionEnd
+
+Section "un.Program files, PATH and registry" SecProgram
+    SectionIn RO
+
     ; --- Remove from system PATH ---
     ReadRegStr $0 HKLM \
         "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
@@ -187,11 +307,47 @@ Section "Uninstall"
     ${EndIf}
 
     ; --- Delete all installed files ---
-    ; The ProgramData folder (%ProgramData%\com.logy.lpm) is intentionally
-    ; left in place: removing the program must not delete collected printer
-    ; history and the config.
+    ; Runs last: the cleanup sections above need lpm.exe. The data root
+    ; (%ProgramData%\com.logy.lpm) survives unless the prune boxes were
+    ; checked - removing the program must not silently delete collected
+    ; printer history and the config.
     RMDir /r "$INSTDIR"
 
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\lpm"
     DeleteRegKey HKLM "Software\lpm"
 SectionEnd
+
+; ---------------------------------------------------------------------------
+; Uninstall - startup
+; ---------------------------------------------------------------------------
+; Declared below the sections so ${Sec...} IDs resolve (compile-time order).
+Function un.onInit
+    ; Display names without the 'un.' prefix the compiler needs to classify
+    ; the sections above as uninstaller sections (set before any page shows).
+    SectionSetText ${SecTask} "Scheduled collection task"
+    SectionSetText ${SecPruneConfig} "Prune configuration"
+    SectionSetText ${SecPruneData} "Prune data"
+    SectionSetText ${SecPruneLogs} "Prune logs"
+    SectionSetText ${SecProgram} "Program files, PATH and registry"
+
+    ; uninstall.exe [/S] [/PURGE] - /PURGE pre-checks every optional prune
+    ; box. It is also the only way to get them in a silent uninstall: pages
+    ; are skipped there, so the boxes would keep their unchecked defaults.
+    ClearErrors
+    ${GetParameters} $R0
+    ${GetOptions} "$R0" "/PURGE" $R1
+    IfErrors purge_flag_done
+    SectionSetFlags ${SecPruneConfig} ${SF_SELECTED}
+    SectionSetFlags ${SecPruneData} ${SF_SELECTED}
+    SectionSetFlags ${SecPruneLogs} ${SF_SELECTED}
+    purge_flag_done:
+FunctionEnd
+
+; Uninstall components page descriptions (hover text).
+!insertmacro MUI_UNFUNCTION_DESCRIPTION_BEGIN
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecTask} $(SecTaskDesc)
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecPruneConfig} $(SecPruneConfigDesc)
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecPruneData} $(SecPruneDataDesc)
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecPruneLogs} $(SecPruneLogsDesc)
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecProgram} $(SecProgramDesc)
+!insertmacro MUI_UNFUNCTION_DESCRIPTION_END

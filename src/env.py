@@ -40,36 +40,57 @@ def _is_frozen() -> bool:
     return getattr(sys.modules[__name__], "__compiled__", None) is not None
 
 
-def _lpm_home_dir() -> str | None:
+def _lpm_home_dir(*, mkdir: bool = True) -> str | None:
     r"""Return the %LPM_HOME% override directory, or None when unset/empty.
 
     The override *is* the data root: ``config/``, ``data/`` and ``logs/``
-    live directly inside it.  Created if missing.
+    live directly inside it.  Created if missing unless *mkdir* is False.
     """
     home = os.environ.get("LPM_HOME", "").strip()
     if not home:
         return None
-    os.makedirs(home, exist_ok=True)
+    if mkdir:
+        os.makedirs(home, exist_ok=True)
     return home
 
 
-def _programdata_dir() -> str:
-    r"""Return %ProgramData%\com.logy.lpm, creating it if needed."""
+def _programdata_dir(*, mkdir: bool = True) -> str:
+    r"""Return %ProgramData%\com.logy.lpm, creating it if needed unless *mkdir* is False."""
     base = os.environ.get("ProgramData") or _DEFAULT_PROGRAMDATA  # noqa: SIM112 - Windows spelling
     d = os.path.join(base, _APP_DIR_NAME)
-    os.makedirs(d, exist_ok=True)
+    if mkdir:
+        os.makedirs(d, exist_ok=True)
     return d
 
 
-def _data_root() -> str:
+def _data_root(*, mkdir: bool = True) -> str:
     # Dev mode always stays in the repo tree; LPM_HOME only redirects an
     # installed build (a stray variable must not relocate the test suite).
     if not _is_frozen():
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    override = _lpm_home_dir()
+    override = _lpm_home_dir(mkdir=mkdir)
     if override is not None:
         return override
-    return _programdata_dir()
+    return _programdata_dir(mkdir=mkdir)
+
+
+def data_root(*, mkdir: bool = True) -> str:
+    r"""Resolve the writable data root (``%LPM_HOME%`` or ``%ProgramData%\com.logy.lpm``).
+
+    ``mkdir=False`` resolves the path *without creating it* - a destructive
+    command (``lpm purge``) must not create the tree it is about to delete.
+    The default keeps the historical side effect so callers such as
+    ``config_dir()`` still get an existing root.
+    """
+    return _data_root(mkdir=mkdir)
+
+
+def is_admin() -> bool:
+    """True when the process runs with full (UAC-elevated) admin rights."""
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
 
 
 def __getattr__(name: str) -> Any:

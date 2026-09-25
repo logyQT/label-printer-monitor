@@ -309,6 +309,7 @@ class TestSubcommandDispatch(unittest.TestCase):
             ("validate", "_handle_validate"),
             ("report", "_handle_report"),
             ("schedule", "_handle_schedule"),
+            ("purge", "_handle_purge"),
             ("help", "_handle_help"),
             ("shell", "_handle_shell"),
         ]
@@ -340,6 +341,17 @@ class TestSubcommandDispatch(unittest.TestCase):
         namespace = handler.call_args.args[0]
         self.assertTrue(namespace.remove)
         self.assertTrue(namespace.verbose)
+
+    def test_purge_flags_parsed(self) -> None:
+        with (
+            patch("sys.argv", ["lpm", "purge", "--all", "--dry-run"]),
+            patch("main._handle_purge") as handler,
+        ):
+            main.main()
+        namespace = handler.call_args.args[0]
+        self.assertTrue(namespace.all)
+        self.assertTrue(namespace.dry_run)
+        self.assertFalse(namespace.tasks)  # --all does not rewrite the flags
 
     def test_report_rejects_verbose(self) -> None:
         """-v belongs to collect/validate/schedule only - report errors out."""

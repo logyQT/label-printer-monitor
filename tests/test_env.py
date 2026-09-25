@@ -51,6 +51,28 @@ class FrozenDataRoot(unittest.TestCase):
             self.assertEqual(env.logs_dir(), os.path.join(home, "logs"))
             self.assertTrue(os.path.isdir(home))
 
+    def test_data_root_without_mkdir_does_not_create_the_tree(self) -> None:
+        # lpm purge must resolve what it is about to delete without
+        # recreating it (config_dir() and friends keep mkdir=True).
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("src.env._is_frozen", return_value=True),
+            patch.dict(os.environ, {"LPM_HOME": os.path.join(tmp, "home"), "ProgramData": tmp}),
+        ):
+            home = os.path.join(tmp, "home")
+            self.assertEqual(env.data_root(mkdir=False), home)
+            self.assertFalse(os.path.exists(home))
+
+    def test_data_root_default_creates_the_tree(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("src.env._is_frozen", return_value=True),
+            patch.dict(os.environ, {"LPM_HOME": os.path.join(tmp, "home")}),
+        ):
+            home = os.path.join(tmp, "home")
+            self.assertEqual(env.data_root(), home)
+            self.assertTrue(os.path.isdir(home))
+
     def test_blank_lpm_home_falls_back_to_programdata(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,

@@ -24,7 +24,6 @@ lists all of them, ``exit`` (or Ctrl+D) leaves.  With non-interactive stdin
 import argparse
 import concurrent.futures
 import contextlib
-import ctypes
 import json
 import logging
 import os
@@ -55,6 +54,7 @@ from src.env import (  # noqa: E402
     config_dir,
     data_dir,
     exe_path,
+    is_admin,
     logs_dir,
 )
 from src.shell import run_shell  # noqa: E402
@@ -496,10 +496,7 @@ def _handle_validate(args: argparse.Namespace) -> None:
 
 def _is_admin() -> bool:
     """True when the process runs with full (UAC-elevated) admin rights."""
-    try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
-        return False
+    return is_admin()
 
 
 def _handle_schedule(args: argparse.Namespace) -> None:
@@ -552,6 +549,29 @@ def _handle_schedule(args: argparse.Namespace) -> None:
         return
 
     install(config, exe_path=exe, verbose=verbose)
+
+
+# ── purge ─────────────────────────────────────────────────────────────
+
+
+def _handle_purge(args: argparse.Namespace) -> None:
+    """``lpm purge`` - remove the scheduled task and/or config/data/logs.
+
+    The uninstaller calls this while lpm.exe is still installed (see
+    installer/lpm.nsi); zip users run it by hand.  Explicit flags only -
+    nothing is deleted implicitly.
+    """
+    from src.purge import run_purge
+
+    code = run_purge(
+        tasks=args.tasks or args.all,
+        config=args.config or args.all,
+        data=args.data or args.all,
+        logs=args.logs or args.all,
+        dry_run=args.dry_run,
+    )
+    if code:
+        sys.exit(code)
 
 
 # ── report ───────────────────────────────────────────────────────────
@@ -616,6 +636,15 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     p_schedule.add_argument("-r", "--remove", action="store_true", help="Remove the scheduled task")
     p_schedule.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     p_schedule.set_defaults(func=_handle_schedule)
+
+    p_purge = sub.add_parser("purge", help="Delete the scheduled task and/or config, data, logs")
+    p_purge.add_argument("--tasks", action="store_true", help="Remove the \\LPM\\LPM_Collect scheduled task")
+    p_purge.add_argument("--config", action="store_true", help="Delete <data root>\\config")
+    p_purge.add_argument("--data", action="store_true", help="Delete <data root>\\data (database + backups)")
+    p_purge.add_argument("--logs", action="store_true", help="Delete <data root>\\logs")
+    p_purge.add_argument("--all", action="store_true", help="All of the above")
+    p_purge.add_argument("--dry-run", action="store_true", help="Only print what would be removed")
+    p_purge.set_defaults(func=_handle_purge)
 
     p_help = sub.add_parser("help", help="Show full help for all commands (or one command)")
     p_help.add_argument("topic", nargs="?", metavar="COMMAND", help="Show help for a single command")
