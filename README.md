@@ -60,7 +60,7 @@ Lint: `ruff check .` / `ruff format .` / `mypy`
 The installed location is machine-wide on purpose: it is the same for every
 Windows account, exists without a user profile loaded, and is therefore
 identical for the interactive CLI and for a headless Task Scheduler run
-(pre-login, no password, no elevation). A per-user location such as
+(as SYSTEM, pre-login, with no stored password). A per-user location such as
 `%APPDATA%` would give the scheduled task a different config, database and
 log tree than the one an operator edits.
 
@@ -125,6 +125,13 @@ Preferred: `lpm schedule` (run as administrator) creates and maintains
 `\LPM\LPM_Collect` from the `schedule` section of `config.json`, and pins
 the absolute path of `lpm.exe` into the task so headless runs never depend
 on PATH.
+
+The task runs as the **SYSTEM** account (`S-1-5-18`, logon type
+`TASK_LOGON_SERVICE_ACCOUNT`): no stored password, runs whether or not any
+user is logged on, and keeps network access - a passwordless S4U logon gets
+no network or encrypted-file access, and interactive logon types only run
+while somebody is logged in. `lpm schedule` re-registers any task whose
+principal is not SYSTEM, and `lpm validate` flags the drift.
 
 Registering manually instead - read the install location from the registry key
 the installer writes, so a custom install directory (or a 32-bit build under

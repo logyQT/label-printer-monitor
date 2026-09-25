@@ -505,9 +505,9 @@ def _is_admin() -> bool:
 def _handle_schedule(args: argparse.Namespace) -> None:
     """Create, update, or remove the Windows scheduled collection task."""
     verbose: bool = args.verbose
-    # Fail fast before any other gate or message: S4U registration is
-    # denied outright from an unelevated (UAC-filtered) admin token.
-    # (S4U/admin internals stay in this comment - end users just need the ask.)
+    # Fail fast before any other gate or message: registering a task that runs
+    # as SYSTEM is denied outright from an unelevated (UAC-filtered) token.
+    # (Admin/logon internals stay in this comment - end users just need the ask.)
     if not _is_admin():
         print("ERROR: lpm schedule requires an elevated session (Run as administrator).", file=sys.stderr)
         sys.exit(1)

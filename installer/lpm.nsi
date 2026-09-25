@@ -113,10 +113,10 @@ Section "Install"
     ${EndIf}
     CreateDirectory "$R9\com.logy.lpm"
 
-    ; This installer runs elevated, but the scheduled task runs
-    ; LeastPrivilege: a folder created here inherits admin-only ACLs, so
-    ; grant BUILTIN\Users modify explicitly. *S-1-5-32-545 is that group's
-    ; locale-independent SID.
+    ; This installer runs elevated, and so does the scheduled task (it runs
+    ; as SYSTEM), but the interactive CLI usually does not: a folder created
+    ; here inherits admin-only ACLs, so grant BUILTIN\Users modify explicitly.
+    ; *S-1-5-32-545 is that group's locale-independent SID.
     ExecWait 'icacls "$R9\com.logy.lpm" /grant *S-1-5-32-545:(OI)(CI)M /Q' $0
     ${If} $0 != 0
         DetailPrint "icacls could not grant write access (exit code $0) - scheduled runs may fail to write data"

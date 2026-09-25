@@ -11,12 +11,20 @@ from typing import Any
 
 from src.schedule.meta import TASK_FOLDER, TASK_NAME, TASK_PATH
 
-# TASK_LOGON_S4U: "run whether user is logged on or not" without storing a
-# password (InteractiveToken would only run while the user is logged in).
-LOGON_TYPE = "S4U"
+# The task runs as the LOCAL SYSTEM account - queried off the working task
+# (\LPM\LPM_Collect), the only principal it has ever run under:
+#   Definition.Principal -> UserId 'SYSTEM', LogonType 5, RunLevel 0
+#   exported XML         -> <UserId>S-1-5-18</UserId>, no <LogonType>,
+#                           no <RunLevel> (both serialize only when non-default)
+# TASK_LOGON_SERVICE_ACCOUNT is the matching registration logon type: SYSTEM
+# needs no password (password must be VT_NULL), runs whether or not any user
+# is logged on, and - unlike S4U - keeps network and encrypted-file access.
+SYSTEM_SID = "S-1-5-18"
+TASK_LOGON_SERVICE_ACCOUNT = 5
 
 __all__ = [
-    "LOGON_TYPE",
+    "SYSTEM_SID",
+    "TASK_LOGON_SERVICE_ACCOUNT",
     "build_task_xml",
     "connect",
     "delete_task",
@@ -113,8 +121,7 @@ def build_task_xml(times: list[str], weekdays_only: bool, exe_path: str) -> str:
         "  </Triggers>\n"
         "  <Principals>\n"
         '    <Principal id="Author">\n'
-        f"      <LogonType>{LOGON_TYPE}</LogonType>\n"
-        "      <RunLevel>LeastPrivilege</RunLevel>\n"
+        f"      <UserId>{SYSTEM_SID}</UserId>\n"
         "    </Principal>\n"
         "  </Principals>\n"
         "  <Settings>\n"
@@ -170,13 +177,13 @@ def register_task(scheduler: Any, xml: str) -> None:
         root.CreateFolder("LPM")
         folder = scheduler.GetFolder(TASK_FOLDER)
     try:
-        folder.RegisterTask(TASK_NAME, xml, 0, None, None, 2)  # TASK_CREATE_OR_UPDATE, TASK_LOGON_S4U
+        folder.RegisterTask(TASK_NAME, xml, 0, None, None, TASK_LOGON_SERVICE_ACCOUNT)
     except Exception:
-        # Task Scheduler can reject principal changes (Interactive->S4U) on
-        # update - fall back to the plan's delete + recreate.
+        # Task Scheduler can reject principal changes (S4U/Interactive->SYSTEM)
+        # on update - fall back to the plan's delete + recreate.
         with suppress(Exception):
             folder.DeleteTask(TASK_NAME, 0)
-        folder.RegisterTask(TASK_NAME, xml, 0, None, None, 2)
+        folder.RegisterTask(TASK_NAME, xml, 0, None, None, TASK_LOGON_SERVICE_ACCOUNT)
 
 
 def delete_task(scheduler: Any, verbose: bool = False) -> bool:

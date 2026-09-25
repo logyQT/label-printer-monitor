@@ -5,13 +5,13 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from src.schedule.commands import LOGON_TYPE, build_task_xml, connect, delete_task, get_task_xml, register_task
+from src.schedule.commands import build_task_xml, connect, delete_task, get_task_xml, register_task
 from src.schedule.meta import TASK_PATH
 from src.schedule.validate import (
     EXPECTED_ARGS_XML,
-    EXPECTED_LOGON_XML,
     extract_task_command,
     extract_task_triggers,
+    runs_as_system,
     validate_schedule_config,
 )
 
@@ -26,8 +26,9 @@ def install(config: Config, exe_path: str, verbose: bool = False) -> None:
 
     *exe_path* is the absolute path of the lpm.exe running this command and
     is pinned into the task action.  An existing task that runs anything
-    else - a bare ``lpm`` resolved through PATH, or another install's exe -
-    is re-registered, so a headless run always starts the same binary.
+    else - a bare ``lpm`` resolved through PATH, another install's exe, or
+    a principal other than SYSTEM - is re-registered, so a headless run
+    always starts the same binary as the SYSTEM account.
     """
     if "schedule" not in config:
         print("ERROR: No 'schedule' section in config.json.", file=sys.stderr)
@@ -67,8 +68,8 @@ def install(config: Config, exe_path: str, verbose: bool = False) -> None:
             mismatches.append(f"trigger times {task_times or 'none'} != config {expected_times}")
         if task_weekdays != weekdays_only:
             mismatches.append(f"weekdays_only {task_weekdays} != config {weekdays_only}")
-        if EXPECTED_LOGON_XML not in task_xml:
-            mismatches.append(f"logon type is not {LOGON_TYPE}")
+        if not runs_as_system(task_xml):
+            mismatches.append("task does not run as the SYSTEM account")
         if EXPECTED_ARGS_XML not in task_xml:
             mismatches.append("action arguments are not 'collect'")
         if extract_task_command(task_xml) != exe_path:

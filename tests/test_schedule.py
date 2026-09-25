@@ -19,7 +19,7 @@ import main
 from src.schedule import check, install, remove
 from src.schedule.commands import build_task_xml, folder_exists
 from src.schedule.meta import TASK_FOLDER
-from src.schedule.validate import check_schedule, extract_task_command, validate_schedule_config
+from src.schedule.validate import check_schedule, extract_task_command, runs_as_system, validate_schedule_config
 from src.validate import FAIL, OK, WARN, Issue
 
 # A real, existing file: the task XML must name lpm.exe by absolute path, and
@@ -100,9 +100,15 @@ class TestBuildTaskXml(unittest.TestCase):
         self.assertIn(f"<WorkingDirectory>{os.path.dirname(EXE)}</WorkingDirectory>", xml)
         self.assertIn("<WakeToRun>true</WakeToRun>", xml)
         self.assertIn("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>", xml)
-        self.assertIn("<LogonType>S4U</LogonType>", xml)
+        # The principal is the SYSTEM account exactly as the working task
+        # stores it: <UserId> only, no <LogonType>/<RunLevel> (both are
+        # serialized only when non-default; SYSTEM is LogonType 5/RunLevel 0).
+        self.assertIn("<UserId>S-1-5-18</UserId>", xml)
+        self.assertNotIn("<LogonType>", xml)
+        self.assertNotIn("<RunLevel>", xml)
+        self.assertNotIn("S4U", xml)
         self.assertNotIn("InteractiveToken", xml)
-        self.assertIn("<RunLevel>LeastPrivilege</RunLevel>", xml)
+        self.assertTrue(runs_as_system(xml))
 
     def test_command_is_absolute_path_not_bare_name(self) -> None:
         # A bare "lpm" is resolved by the task host via PATH at fire time;
@@ -119,6 +125,28 @@ class TestBuildTaskXml(unittest.TestCase):
             xml,
         )
         self.assertEqual(extract_task_command(xml), r"C:\Program Files\lpm (a&b)\lpm.exe")
+
+
+class TestRunsAsSystem(unittest.TestCase):
+    """runs_as_system() - the principal half of "does this task match?".
+
+    The working task stores the SID; Task Scheduler may also report the name.
+    """
+
+    def test_accepts_sid_and_names(self) -> None:
+        self.assertTrue(runs_as_system("<UserId>S-1-5-18</UserId>"))
+        self.assertTrue(runs_as_system("<UserId>SYSTEM</UserId>"))
+        self.assertTrue(runs_as_system("<UserId>nt authority\\system</UserId>"))
+        self.assertTrue(runs_as_system("  <UserId>S-1-5-18</UserId>\n"))
+
+    def test_rejects_other_principals(self) -> None:
+        self.assertFalse(runs_as_system("<LogonType>S4U</LogonType>"))  # pre-SYSTEM task
+        self.assertFalse(runs_as_system("<LogonType>InteractiveToken</LogonType>"))
+        self.assertFalse(runs_as_system("<UserId>AzureAD\\KacperStoltmann</UserId>"))
+        self.assertFalse(runs_as_system("<UserId>S-1-5-21-1-2-3-1001</UserId>"))
+        self.assertFalse(runs_as_system("<Task/>"))
+        # A near-miss elsewhere in the XML must not count as the principal.
+        self.assertFalse(runs_as_system("<Arguments>S-1-5-18</Arguments>"))
 
 
 class TestScheduleConfigValidation(unittest.TestCase):
@@ -187,7 +215,7 @@ class TestScheduleHandler(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 1)
         self.assertIn("ERROR: lpm schedule requires an elevated session", err.getvalue())
         self.assertNotIn("requires a built version", err.getvalue())
-        # End users don't need the internals (S4U, re-run hints) - just the ask.
+        # End users don't need the internals (logon type, re-run hints) - just the ask.
         self.assertNotIn("S4U", err.getvalue())
 
     def test_schedule_not_frozen(self) -> None:
@@ -312,7 +340,7 @@ class TestInstallRemove(unittest.TestCase):
         call = lpm.RegisterTask.call_args
         self.assertEqual(call.args[0], "LPM_Collect")
         self.assertEqual(call.args[2], 0)  # TASK_CREATE_OR_UPDATE
-        self.assertEqual(call.args[5], 2)  # TASK_LOGON_S4U
+        self.assertEqual(call.args[5], 5)  # TASK_LOGON_SERVICE_ACCOUNT (SYSTEM)
         xml = call.args[1]
         self.assertEqual(xml.count("<CalendarTrigger>"), 2)
         self.assertIn("<StartBoundary>2026-01-01T05:00:00</StartBoundary>", xml)
@@ -344,6 +372,18 @@ class TestInstallRemove(unittest.TestCase):
         lpm.RegisterTask.assert_not_called()
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
+    def test_task_up_to_date_system_by_name(self, mock_dispatch: MagicMock) -> None:
+        named = build_task_xml(["05:00", "15:00"], True, EXE).replace(
+            "<UserId>S-1-5-18</UserId>", "<UserId>SYSTEM</UserId>"
+        )
+        configure_dispatch(mock_dispatch, task_xml=named)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            install({"schedule": dict(VALID_SCHEDULE)}, EXE)
+        self.assertIn("Schedule is up to date.", out.getvalue())
+        mock_dispatch.return_value.GetFolder(TASK_FOLDER).RegisterTask.assert_not_called()
+
+    @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_task_removal(self, mock_dispatch: MagicMock) -> None:
         configure_dispatch(mock_dispatch, task_xml="<Task/>")
         out = io.StringIO()
@@ -371,8 +411,11 @@ class TestInstallRemove(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_task_update_logon_type(self, mock_dispatch: MagicMock) -> None:
-        # Task registered before the S4U change: triggers match, principal doesn't.
-        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace("S4U", "InteractiveToken")
+        # Task registered before the SYSTEM change: triggers match, principal
+        # is still the passwordless S4U logon that never ran.
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace(
+            "<UserId>S-1-5-18</UserId>", "<LogonType>S4U</LogonType>"
+        )
         configure_dispatch(mock_dispatch, task_xml=old_xml)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -566,6 +609,18 @@ class TestCheckSchedule(unittest.TestCase):
         self.assertEqual(issues, [Issue(OK, "Scheduled task matches config")])
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
+    def test_validate_matches_system_by_name(self, mock_dispatch: MagicMock) -> None:
+        # Same principal, but Task Scheduler reported the name instead of the SID.
+        named = build_task_xml(["15:00", "05:00"], True, EXE).replace(
+            "<UserId>S-1-5-18</UserId>", "<UserId>SYSTEM</UserId>"
+        )
+        configure_dispatch(mock_dispatch, task_xml=named)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})
+            issues = check_schedule(path, tmp)
+        self.assertEqual(issues, [Issue(OK, "Scheduled task matches config")])
+
+    @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_differs(self, mock_dispatch: MagicMock) -> None:
         configure_dispatch(mock_dispatch, task_xml=build_task_xml(["09:00"], True, EXE))
         with tempfile.TemporaryDirectory() as tmp:
@@ -586,7 +641,11 @@ class TestCheckSchedule(unittest.TestCase):
 
     @patch("src.schedule.commands.win32com.client.Dispatch")
     def test_validate_differs_on_logon_type(self, mock_dispatch: MagicMock) -> None:
-        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace("S4U", "InteractiveToken")
+        # Pre-SYSTEM task: triggers match but the principal is S4U - the
+        # passwordless logon that has never actually run this task.
+        old_xml = build_task_xml(["05:00", "15:00"], True, EXE).replace(
+            "<UserId>S-1-5-18</UserId>", "<LogonType>S4U</LogonType>"
+        )
         configure_dispatch(mock_dispatch, task_xml=old_xml)
         with tempfile.TemporaryDirectory() as tmp:
             path = write_config(tmp, {"schedule": dict(VALID_SCHEDULE)})

@@ -14,7 +14,7 @@ import os
 import re
 from typing import TYPE_CHECKING, Any
 
-from src.schedule.commands import LOGON_TYPE, connect, get_task_xml, unescape_xml
+from src.schedule.commands import connect, get_task_xml, unescape_xml
 from src.validate import FAIL, OK, WARN, Issue
 
 if TYPE_CHECKING:
@@ -23,14 +23,24 @@ if TYPE_CHECKING:
 TIME_PATTERN: re.Pattern[str] = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _TRIGGER_TIME: re.Pattern[str] = re.compile(r"<StartBoundary>[^T]+T(\d\d:\d\d):")
 _COMMAND_XML: re.Pattern[str] = re.compile(r"<Command>(.*?)</Command>")
-# What build_task_xml() writes for the principal; a task registered before the
-# S4U change has InteractiveToken here and must be re-registered.
-EXPECTED_LOGON_XML = f"<LogonType>{LOGON_TYPE}</LogonType>"
+# What build_task_xml() writes for the principal: the SYSTEM account. Task
+# Scheduler reports it either as the SID (what the working task stores) or as
+# the name, so both count. A task registered before the SYSTEM change has
+# <LogonType>S4U</LogonType> (or InteractiveToken) and no <UserId> at all -
+# passwordless S4U never ran this task, so it must be re-registered.
+_SYSTEM_USER_ID: re.Pattern[str] = re.compile(
+    r"<UserId>\s*(S-1-5-18|SYSTEM|NT AUTHORITY\\SYSTEM)\s*</UserId>", re.IGNORECASE
+)
 # What build_task_xml() writes as the task action; a task registered before the
 # subcommand change runs `lpm --collect`, which the new CLI rejects - it must
 # be re-registered (otherwise every scheduled run fails at argument parsing).
 EXPECTED_ARGS_XML = "<Arguments>collect</Arguments>"
 _STRAY_TASK_MESSAGE = "Stray scheduled task found: \\LPM\\LPM_Collect. Run lpm schedule --remove to clean it up."
+
+
+def runs_as_system(task_xml: str) -> bool:
+    """True when the task's principal is the LOCAL SYSTEM account."""
+    return _SYSTEM_USER_ID.search(task_xml) is not None
 
 
 def validate_schedule_config(config: Config) -> list[str]:
@@ -74,7 +84,7 @@ def extract_task_command(task_xml: str) -> str | None:
 
 
 def _matches_config(task_xml: str, schedule: dict[str, Any]) -> bool:
-    """True when the task's triggers, principal, AND action match the config."""
+    """True when the task's triggers, principal (SYSTEM), AND action match."""
     task_times, task_weekdays = extract_task_triggers(task_xml)
 
     cfg_times = schedule.get("times")
@@ -87,7 +97,7 @@ def _matches_config(task_xml: str, schedule: dict[str, Any]) -> bool:
     return (
         task_times == expected_times
         and task_weekdays == weekdays_only
-        and EXPECTED_LOGON_XML in task_xml
+        and runs_as_system(task_xml)
         and EXPECTED_ARGS_XML in task_xml
     )
 
